@@ -206,6 +206,46 @@
     line-height: 20px;
     cursor: pointer;
   }
+  /* 2026-08-27追加: 証憑種別ごとの撮影入口分岐(タイル選択画面) */
+  .kind-picker-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .kind-tile {
+    background: #fff;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    padding: 20px 10px;
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    min-width: 0;
+  }
+  .kind-tile:active { background: #eef3ff; border-color: #1a73e8; }
+  .kind-picker-back {
+    margin-bottom: 10px;
+  }
+  .current-kind-bar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #eef3ff;
+    border: 1px solid #c7d9fb;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+  }
+  .current-kind-bar button {
+    flex: none;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
 </style>
 </head>
 <body>
@@ -218,7 +258,19 @@
 <div id="greeting" class="greeting"></div>
 <div id="messageBox" class="message-box" style="display:none;"></div>
 
-<div class="card camera-card" id="cameraCard">
+<!-- 2026-08-27追加: 証憑種別ごとの撮影入口分岐(タイル選択画面)。種別マスタが未設定の顧客は
+     kindsが空配列で返ってくるため、このカードは常に非表示のまま(従来通りの1本道)になる -->
+<div class="card" id="kindPickerCard" style="display:none;">
+  <h2 class="card-title" id="kindPickerTitle">証憑の種類を選んでください</h2>
+  <button id="kindPickerBackBtn" type="button" class="secondary kind-picker-back" style="display:none;">← 大項目選択に戻る</button>
+  <div id="kindPickerTiles" class="kind-picker-tiles"></div>
+</div>
+<div id="currentKindBar" class="current-kind-bar">
+  <span id="currentKindLabel"></span>
+  <button id="changeKindBtn" type="button" class="secondary">種類を変更</button>
+</div>
+
+<div class="card camera-card" id="cameraCard" style="display:none;">
   <h2 class="card-title">カメラで撮影</h2>
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
@@ -246,7 +298,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="filePickerCard" style="display:none;">
   <h2 class="card-title">スマホ内の写真・PDFを送信</h2>
   <p class="note" style="margin-bottom:8px;">すでに撮影済みの写真や、請求書・通帳のPDFなどを選んで送信できます。ボタンを何度か押して追加していくこともできます。</p>
   <input type="file" id="filePicker" accept="image/*,application/pdf" multiple>
@@ -256,7 +308,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="pendingFilesCard" style="display:none;">
   <h2 class="card-title">送信済みファイル</h2>
   <p class="note" style="margin-bottom:8px;">まだNAVIS側で処理していないファイルです。間違えて送ってしまった場合は削除できます。</p>
   <div id="pendingFiles" class="thumb-row"></div>
@@ -302,6 +354,27 @@ const btnSendFiles = document.getElementById('btnSendFiles');
 const pendingFilesEl = document.getElementById('pendingFiles');
 const pendingEmptyEl = document.getElementById('pendingEmpty');
 
+// 2026-08-27追加: 証憑種別ごとの撮影入口分岐
+const filePickerCard = document.getElementById('filePickerCard');
+const pendingFilesCard = document.getElementById('pendingFilesCard');
+const kindPickerCard = document.getElementById('kindPickerCard');
+const kindPickerTitle = document.getElementById('kindPickerTitle');
+const kindPickerTiles = document.getElementById('kindPickerTiles');
+const kindPickerBackBtn = document.getElementById('kindPickerBackBtn');
+const currentKindBar = document.getElementById('currentKindBar');
+const currentKindLabel = document.getElementById('currentKindLabel');
+const changeKindBtn = document.getElementById('changeKindBtn');
+
+const MAJOR_CATEGORIES = [
+  '01_レシート・領収証', '02_請求書', '03_預金口座',
+  '04_クレジットカード明細', '05_現金出納簿', '06_その他'
+];
+function majorLabel(major) { return String(major || '').replace(/^0\d_/, ''); }
+
+let customerKinds = []; // doGetのkinds(空配列なら従来通りフォルダ分岐なし)
+let selectedKind = null; // {majorCategory, name, displayName, folderId} | null
+let lastPendingFiles = []; // doGetのfiles(全フォルダ横断済み)
+
 const imageModal = document.getElementById('imageModal');
 const modalImg = document.getElementById('modalImg');
 const modalClose = document.getElementById('modalClose');
@@ -345,6 +418,9 @@ if (!TOKEN) {
   setStatus('URLに顧客トークンが含まれていません。担当者から送られたURLをそのまま開いてください。', 'error');
   btnStart.disabled = true;
   filePicker.disabled = true;
+  // 2026-08-27追加: トークン不明時はdoGetを呼べず種別分岐の判定もできないため、
+  // 従来通りカメラ・ファイル送信カードをそのまま表示しておく(タイル選択は使わない)
+  showCardsFallback();
 } else {
   loadCustomerInfo();
 }
@@ -359,11 +435,39 @@ async function loadCustomerInfo() {
         messageBoxEl.textContent = data.message;
         messageBoxEl.style.display = 'block';
       }
-      renderPendingFiles(data.files || []);
+      customerKinds = data.kinds || [];
+      lastPendingFiles = data.files || [];
+      // 2026-08-27追加: 証憑種別が1件も設定されていない顧客は、従来通りタイル選択なしの1本道
+      if (customerKinds.length === 0) {
+        kindPickerCard.style.display = 'none';
+        currentKindBar.style.display = 'none';
+        cameraCard.style.display = '';
+        filePickerCard.style.display = '';
+        pendingFilesCard.style.display = '';
+        renderPendingFiles(lastPendingFiles);
+      } else if (selectedKind) {
+        // 既に種類を選択済みの状態でのリロード(送信直後の再取得等)。選択は維持し一覧だけ更新
+        renderPendingFiles(lastPendingFiles.filter(f => f.folderId === selectedKind.folderId));
+      } else {
+        renderKindHome();
+      }
+    } else {
+      showCardsFallback();
     }
   } catch (e) {
-    // 案内文・一覧の取得に失敗しても、撮影・送信機能は使えるようにしておく
+    // 案内文・種別一覧の取得に失敗しても、撮影・送信機能は使えるようにしておく
+    showCardsFallback();
   }
+}
+
+// 2026-08-27追加: doGetの取得に失敗した場合のフォールバック。種別分岐の判定ができないため、
+// 従来通りタイル選択なしでカメラ・ファイル送信カードを表示する
+function showCardsFallback() {
+  kindPickerCard.style.display = 'none';
+  currentKindBar.style.display = 'none';
+  cameraCard.style.display = '';
+  filePickerCard.style.display = '';
+  pendingFilesCard.style.display = '';
 }
 
 function renderPendingFiles(files) {
@@ -387,6 +491,75 @@ function renderPendingFiles(files) {
     pendingFilesEl.appendChild(wrap);
   });
 }
+
+// 2026-08-27追加: 証憑種別ごとの撮影入口分岐(タイル選択画面)
+function groupKindsByMajor(kinds) {
+  const map = {};
+  kinds.forEach(k => {
+    const major = k.majorCategory || '06_その他';
+    if (!map[major]) map[major] = [];
+    map[major].push(k);
+  });
+  return map;
+}
+
+function renderKindHome() {
+  selectedKind = null;
+  const grouped = groupKindsByMajor(customerKinds);
+  kindPickerTitle.textContent = '証憑の種類を選んでください';
+  kindPickerBackBtn.style.display = 'none';
+  kindPickerTiles.innerHTML = '';
+  MAJOR_CATEGORIES.forEach(major => {
+    const list = grouped[major];
+    if (!list || list.length === 0) return; // この顧客に設定が無い大項目のタイルは出さない
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'kind-tile';
+    tile.textContent = majorLabel(major);
+    tile.addEventListener('click', () => {
+      if (list.length === 1) {
+        selectKind(list[0]); // サブ一覧が1件だけなら選択画面を飛ばして直接カメラへ
+      } else {
+        renderKindSubList(major, list);
+      }
+    });
+    kindPickerTiles.appendChild(tile);
+  });
+  kindPickerCard.style.display = '';
+  currentKindBar.style.display = 'none';
+  cameraCard.style.display = 'none';
+  filePickerCard.style.display = 'none';
+  pendingFilesCard.style.display = ''; // ホーム画面にも送信済み一覧(全種別横断)を出す
+  renderPendingFiles(lastPendingFiles);
+}
+
+function renderKindSubList(major, list) {
+  kindPickerTitle.textContent = majorLabel(major);
+  kindPickerBackBtn.style.display = '';
+  kindPickerTiles.innerHTML = '';
+  list.forEach(k => {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'kind-tile';
+    tile.textContent = k.displayName;
+    tile.addEventListener('click', () => selectKind(k));
+    kindPickerTiles.appendChild(tile);
+  });
+}
+
+function selectKind(k) {
+  selectedKind = k;
+  kindPickerCard.style.display = 'none';
+  currentKindBar.style.display = 'flex';
+  currentKindLabel.textContent = '選択中: ' + majorLabel(k.majorCategory) + ' > ' + k.displayName;
+  cameraCard.style.display = '';
+  filePickerCard.style.display = '';
+  pendingFilesCard.style.display = '';
+  renderPendingFiles(lastPendingFiles.filter(f => f.folderId === k.folderId));
+}
+
+kindPickerBackBtn.addEventListener('click', renderKindHome);
+changeKindBtn.addEventListener('click', renderKindHome);
 
 async function deletePendingFile(fileId, wrapEl) {
   try {
@@ -660,6 +833,7 @@ async function sendQueue() {
           filename,
           mimeType: 'image/jpeg',
           token: TOKEN,
+          folderId: selectedKind ? selectedKind.folderId : undefined, // 2026-08-27追加
           groupId: item.groupId,
           groupPage,
           groupTotal
@@ -732,7 +906,8 @@ async function sendFiles() {
           image: base64,
           filename,
           mimeType: file.type || 'application/octet-stream',
-          token: TOKEN
+          token: TOKEN,
+          folderId: selectedKind ? selectedKind.folderId : undefined // 2026-08-27追加
         })
       });
       const data = await res.json();
