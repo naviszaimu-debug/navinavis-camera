@@ -132,6 +132,13 @@
   }
   button:disabled { background: #aaa; cursor: not-allowed; }
   button.secondary { background: #5f6368; }
+  /* 2026-08-27追加: 撮影ボタンは一番使う操作なので、他より大きく・目立つ色にする */
+  .btn-shoot {
+    padding: 18px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    background: #d93025;
+  }
   ul#fileList { list-style: none; padding: 0; margin: 12px 0 0; font-size: 0.85rem; }
   #status {
     font-size: 0.85rem;
@@ -170,7 +177,7 @@
     font-size: 1.2rem;
     border: none;
   }
-  /* 連続撮影モード中、カメラカードを画面全体に占有させる(スクロールなしで撮影ボタンに届くようにする) */
+  /* 分割撮影モード中、カメラカードを画面全体に占有させる(スクロールなしで撮影ボタンに届くようにする) */
   .camera-card.fullscreen-mode {
     position: fixed;
     inset: 0;
@@ -291,7 +298,6 @@
 </div>
 
 <div class="card camera-card" id="cameraCard" style="display:none;">
-  <h2 class="card-title">カメラで撮影</h2>
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
   <div id="burstBadge" class="burst-badge" style="display:none;"></div>
@@ -299,27 +305,32 @@
   <div id="bulkUngroupBar" class="row" style="display:none;">
     <button id="btnBulkUngroup" class="secondary" type="button">選択した写真をグループから外す</button>
   </div>
+  <!-- 2026-08-27変更: 種類を選んだ時点で自動でカメラが起動するようにしたため、
+       「カメラ起動」ボタンは初期非表示(停止後の再起動用にのみ残す) -->
   <div class="row">
-    <button id="btnStart">カメラ起動</button>
+    <button id="btnStart" style="display:none;">カメラ起動</button>
     <button id="btnStop" class="secondary" style="display:none;">カメラを停止</button>
     <button id="btnSwitch" class="secondary" disabled>前後切替</button>
   </div>
   <div class="row">
-    <button id="btnShoot" disabled>撮影</button>
-    <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
-  </div>
-  <div class="row">
-    <button id="btnBurstStart" class="secondary" disabled>連続撮影モード開始</button>
-    <button id="btnBurstEnd" style="display:none;">連続撮影モード終了</button>
+    <button id="btnBurstStart" class="secondary" disabled>分割撮影モード開始</button>
+    <button id="btnBurstEnd" style="display:none;">分割撮影モード終了</button>
   </div>
   <p class="note" id="burstHint" style="margin:4px 0 0;">通帳や長いレシートなど、複数枚まとめて1つの証憑として送りたい時だけ使ってください。</p>
+  <div class="row">
+    <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
+  </div>
+  <div class="row">
+    <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
+  </div>
   <div class="row">
     <button id="btnSend" style="display:none;">送信(ドライブに保存)</button>
   </div>
 </div>
 
+<!-- 2026-08-27変更: 常時表示のカードから、案内文と同じ折りたたみ式に変更(祥希さんの指示) -->
+<button id="filePickerToggle" type="button" class="message-box-toggle" style="display:none;">📁 スマホ内の写真・PDFを送信 ▾</button>
 <div class="card" id="filePickerCard" style="display:none;">
-  <h2 class="card-title">スマホ内の写真・PDFを送信</h2>
   <p class="note" style="margin-bottom:8px;">すでに撮影済みの写真や、請求書・通帳のPDFなどを選んで送信できます。ボタンを何度か押して追加していくこともできます。</p>
   <input type="file" id="filePicker" accept="image/*,application/pdf" multiple>
   <ul id="fileList"></ul>
@@ -377,6 +388,7 @@ const pendingEmptyEl = document.getElementById('pendingEmpty');
 
 // 2026-08-27追加: 証憑種別ごとの撮影入口分岐
 const filePickerCard = document.getElementById('filePickerCard');
+const filePickerToggle = document.getElementById('filePickerToggle'); // 2026-08-27追加
 const pendingFilesCard = document.getElementById('pendingFilesCard');
 const kindPickerCard = document.getElementById('kindPickerCard');
 const kindPickerTitle = document.getElementById('kindPickerTitle');
@@ -418,13 +430,25 @@ messageBoxToggle.addEventListener('click', () => {
   messageBoxToggle.textContent = expanded ? '案内文を見る ▾' : '案内文を閉じる ▴';
 });
 
+// 2026-08-27追加: 「スマホ内の写真・PDFを送信」の折りたたみ/展開(案内文と同じ方式)
+function setFilePickerVisible(show) {
+  filePickerToggle.style.display = show ? 'block' : 'none';
+  filePickerCard.style.display = 'none'; // 画面が切り替わるたびに折りたたんだ状態に戻す
+  filePickerToggle.textContent = '📁 スマホ内の写真・PDFを送信 ▾';
+}
+filePickerToggle.addEventListener('click', () => {
+  const expanded = filePickerCard.style.display !== 'none';
+  filePickerCard.style.display = expanded ? 'none' : 'block';
+  filePickerToggle.textContent = expanded ? '📁 スマホ内の写真・PDFを送信 ▾' : '📁 スマホ内の写真・PDFを送信 ▴';
+});
+
 let currentStream = null;
 let capturedQueue = []; // { id, blob, url, groupId, groupLabel }
 let itemSeqCounter = 0;
 let selectedFiles = [];
 let facingMode = 'environment';
 
-// 連続撮影モード(複数枚を1つの証憑としてグルーピングする機能)の状態
+// 分割撮影モード(複数枚を1つの証憑としてグルーピングする機能)の状態
 let burstActive = false;
 let burstSeq = 0;          // モードを開始した回数。そのままグループIDとして使う
 let currentGroupId = null;
@@ -480,9 +504,10 @@ async function loadCustomerInfo() {
         kindPickerCard.style.display = 'none';
         currentKindBar.style.display = 'none';
         cameraCard.style.display = '';
-        filePickerCard.style.display = '';
+        setFilePickerVisible(true);
         pendingFilesCard.style.display = '';
         renderPendingFiles(lastPendingFiles);
+        if (!currentStream) startCamera(); // 2026-08-27追加: 種別分岐が無い顧客も自動でカメラ起動
       } else if (selectedKind) {
         // 既に種類を選択済みの状態でのリロード(送信直後の再取得等)。選択は維持し一覧だけ更新
         renderPendingFiles(lastPendingFiles.filter(f => f.folderId === selectedKind.folderId));
@@ -504,7 +529,7 @@ function showCardsFallback() {
   kindPickerCard.style.display = 'none';
   currentKindBar.style.display = 'none';
   cameraCard.style.display = '';
-  filePickerCard.style.display = '';
+  setFilePickerVisible(true);
   pendingFilesCard.style.display = '';
 }
 
@@ -543,6 +568,11 @@ function groupKindsByMajor(kinds) {
 
 function renderKindHome() {
   selectedKind = null;
+  // 2026-08-27追加: タイル選択に戻る時はカメラを解放しておく(stopCameraManuallyだと
+  // 未起動時にも「カメラを停止しました」と出てしまうため、必要な後始末だけ行う)
+  if (burstActive) endBurstMode();
+  stopCamera();
+  exitCameraFullscreen();
   const grouped = groupKindsByMajor(customerKinds);
   kindPickerTitle.textContent = '証憑の種類を選んでください';
   kindPickerBackBtn.style.display = 'none';
@@ -566,7 +596,7 @@ function renderKindHome() {
   kindPickerCard.style.display = '';
   currentKindBar.style.display = 'none';
   cameraCard.style.display = 'none';
-  filePickerCard.style.display = 'none';
+  setFilePickerVisible(false);
   pendingFilesCard.style.display = ''; // ホーム画面にも送信済み一覧(全種別横断)を出す
   renderPendingFiles(lastPendingFiles);
 }
@@ -591,9 +621,10 @@ function selectKind(k) {
   currentKindBar.style.display = 'flex';
   currentKindLabel.textContent = '選択中: ' + majorLabel(k.majorCategory) + ' > ' + k.displayName;
   cameraCard.style.display = '';
-  filePickerCard.style.display = '';
+  setFilePickerVisible(true);
   pendingFilesCard.style.display = '';
   renderPendingFiles(lastPendingFiles.filter(f => f.folderId === k.folderId));
+  startCamera(); // 2026-08-27追加: 種類が決まった時点で「カメラで撮影」画面を挟まず即カメラを起動する
 }
 
 kindPickerBackBtn.addEventListener('click', renderKindHome);
@@ -756,7 +787,7 @@ function renderQueue() {
     queueThumbs.appendChild(wrap);
   });
   const hasItems = capturedQueue.length > 0;
-  // 連続撮影モード中は送信ボタンを隠す(自動送信はしない。モード終了で再表示されるだけ)
+  // 分割撮影モード中は送信ボタンを隠す(自動送信はしない。モード終了で再表示されるだけ)
   btnSend.style.display = (hasItems && !burstActive) ? 'block' : 'none';
   btnSend.disabled = !hasItems;
   btnRetake.style.display = hasItems ? 'block' : 'none';
@@ -797,7 +828,7 @@ function startBurstMode() {
   btnBurstEnd.style.display = 'block';
   updateBurstBadge();
   renderQueue();
-  setStatus('連続撮影モードを開始しました。同じ証憑のページを続けて撮影してください。', 'ok');
+  setStatus('分割撮影モードを開始しました。同じ証憑のページを続けて撮影してください。', 'ok');
 }
 
 function endBurstMode() {
@@ -807,13 +838,13 @@ function endBurstMode() {
   btnBurstEnd.style.display = 'none';
   burstBadge.style.display = 'none';
   renderQueue();
-  setStatus('連続撮影モードを終了しました。内容を確認してから送信してください。', 'ok');
+  setStatus('分割撮影モードを終了しました。内容を確認してから送信してください。', 'ok');
 }
 
 function updateBurstBadge() {
   if (!burstActive) { burstBadge.style.display = 'none'; return; }
   const count = capturedQueue.filter(item => item.groupId === currentGroupId).length;
-  burstBadge.textContent = '連続撮影モード中(' + count + '枚)';
+  burstBadge.textContent = '分割撮影モード中(' + count + '枚)';
   burstBadge.style.display = 'block';
 }
 
