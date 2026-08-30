@@ -103,6 +103,19 @@
     background: #000;
   }
   .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 2026-08-29追加: ホーム画面の送信済み一覧(種別横断)で、各サムネイルの下に種別名を
+     表示するための専用ラッパー。既存の.thumb自体(burst撮影キュー等でも共用)は変更しない。 */
+  .pending-item { display: flex; flex-direction: column; align-items: center; width: 72px; }
+  .pending-item-label {
+    margin-top: 2px;
+    font-size: 10px;
+    color: #666;
+    text-align: center;
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .thumb-del {
     position: absolute;
     top: 2px;
@@ -326,16 +339,18 @@
   <div class="row">
     <button id="btnSend" style="display:none;">送信(ドライブに保存)</button>
   </div>
-</div>
 
-<!-- 2026-08-27変更: 常時表示のカードから、案内文と同じ折りたたみ式に変更(祥希さんの指示) -->
-<button id="filePickerToggle" type="button" class="message-box-toggle" style="display:none;">📁 スマホ内の写真・PDFを送信 ▾</button>
-<div class="card" id="filePickerCard" style="display:none;">
-  <p class="note" style="margin-bottom:8px;">すでに撮影済みの写真や、請求書・通帳のPDFなどを選んで送信できます。ボタンを何度か押して追加していくこともできます。</p>
-  <input type="file" id="filePicker" accept="image/*,application/pdf" multiple>
-  <ul id="fileList"></ul>
-  <div class="row">
-    <button id="btnSendFiles" disabled>選択したファイルを送信</button>
+  <!-- 2026-08-29変更: カメラ起動中(フルスクリーン表示中)でも撮影ボタンの下にスクロールして
+       到達できるよう、cameraCardの子要素に変更(以前は兄弟要素で、フルスクリーン中はカメラの
+       固定オーバーレイの裏に隠れて実質見えなかった)。 -->
+  <button id="filePickerToggle" type="button" class="message-box-toggle" style="display:none;">📁 スマホ内の写真・PDFを送信 ▾</button>
+  <div class="card" id="filePickerCard" style="display:none;">
+    <p class="note" style="margin-bottom:8px;">すでに撮影済みの写真や、請求書・通帳のPDFなどを選んで送信できます。ボタンを何度か押して追加していくこともできます。</p>
+    <input type="file" id="filePicker" accept="image/*,application/pdf" multiple>
+    <ul id="fileList"></ul>
+    <div class="row">
+      <button id="btnSendFiles" disabled>選択したファイルを送信</button>
+    </div>
   </div>
 </div>
 
@@ -407,6 +422,10 @@ function majorLabel(major) { return String(major || '').replace(/^0\d_/, ''); }
 let customerKinds = []; // doGetのkinds(空配列なら従来通りフォルダ分岐なし)
 let selectedKind = null; // {majorCategory, name, displayName, folderId} | null
 let lastPendingFiles = []; // doGetのfiles(全フォルダ横断済み)
+// 2026-08-29追加: カメラ停止時にreturnToPickerがどの画面(サブ一覧 or ホーム)へ戻ればよいか
+// 判断するための、直近に選んだ大項目。大項目タイルをタップした時点(candidate数に関わらず)で
+// セットする。
+let lastMajorCategory = null;
 
 const imageModal = document.getElementById('imageModal');
 const modalImg = document.getElementById('modalImg');
@@ -509,8 +528,9 @@ async function loadCustomerInfo() {
         renderPendingFiles(lastPendingFiles);
         if (!currentStream) startCamera(); // 2026-08-27追加: 種別分岐が無い顧客も自動でカメラ起動
       } else if (selectedKind) {
-        // 既に種類を選択済みの状態でのリロード(送信直後の再取得等)。選択は維持し一覧だけ更新
-        renderPendingFiles(lastPendingFiles.filter(f => f.folderId === selectedKind.folderId));
+        // 既に種類を選択済みの状態でのリロード(送信直後の再取得等)。選択はそのまま維持する。
+        // 2026-08-29変更: 送信済み一覧はホーム画面専用(種別横断)になったため、
+        // ここでの種別フィルタ済み再描画は不要になった。
       } else {
         renderKindHome();
       }
@@ -533,11 +553,25 @@ function showCardsFallback() {
   pendingFilesCard.style.display = '';
 }
 
+// 2026-08-29追加: 送信済み(未処理)一覧はホーム画面専用(種別横断)になったため、
+// 各アイテムがどの種別のものか分かるようラベルを表示する。customerKindsのfolderIdで
+// 表示名を引き、対応する種別が見つからない(設定変更後の古いファイル等)場合は
+// 大項目+生の種別名称にフォールバックする。
+function pendingFileKindLabel(f) {
+  const match = customerKinds.find(k => k.folderId === f.folderId);
+  if (match) return match.displayName;
+  if (f.majorCategory || f.kindName) return majorLabel(f.majorCategory) + (f.kindName ? ('/' + f.kindName) : '');
+  return '';
+}
+
 function renderPendingFiles(files) {
   pendingFilesEl.innerHTML = '';
   pendingEmptyEl.style.display = files.length === 0 ? 'block' : 'none';
 
   files.forEach(f => {
+    const item = document.createElement('div');
+    item.className = 'pending-item';
+
     const wrap = document.createElement('div');
     wrap.className = 'thumb';
     const img = document.createElement('img');
@@ -548,10 +582,17 @@ function renderPendingFiles(files) {
     del.className = 'thumb-del';
     del.textContent = '×';
     del.title = f.name;
-    del.addEventListener('click', () => deletePendingFile(f.id, wrap));
+    del.addEventListener('click', () => deletePendingFile(f.id, item));
     wrap.appendChild(img);
     wrap.appendChild(del);
-    pendingFilesEl.appendChild(wrap);
+    item.appendChild(wrap);
+
+    const label = document.createElement('div');
+    label.className = 'pending-item-label';
+    label.textContent = pendingFileKindLabel(f);
+    item.appendChild(label);
+
+    pendingFilesEl.appendChild(item);
   });
 }
 
@@ -585,6 +626,9 @@ function renderKindHome() {
     tile.className = 'kind-tile';
     tile.textContent = majorLabel(major);
     tile.addEventListener('click', () => {
+      // 2026-08-29追加: カメラ停止時にどの画面へ戻ればよいか(サブ一覧 or ホーム)を
+      // returnToPickerが判断できるよう、選んだ大項目を覚えておく。
+      lastMajorCategory = major;
       if (list.length === 1) {
         selectKind(list[0]); // サブ一覧が1件だけなら選択画面を飛ばして直接カメラへ
       } else {
@@ -597,8 +641,11 @@ function renderKindHome() {
   currentKindBar.style.display = 'none';
   cameraCard.style.display = 'none';
   setFilePickerVisible(false);
-  pendingFilesCard.style.display = ''; // ホーム画面にも送信済み一覧(全種別横断)を出す
-  renderPendingFiles(lastPendingFiles);
+  pendingFilesCard.style.display = ''; // ホーム画面に送信済み一覧(全種別横断)を出す
+  // 2026-08-29追加: 種別ごとの撮影画面での表示を廃止しホームへ集約したため、
+  // どの種別のファイルが混ざっていても撮影した順(createdAt昇順)に並べる。
+  const sorted = lastPendingFiles.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  renderPendingFiles(sorted);
 }
 
 function renderKindSubList(major, list) {
@@ -622,9 +669,26 @@ function selectKind(k) {
   currentKindLabel.textContent = '選択中: ' + majorLabel(k.majorCategory) + ' > ' + k.displayName;
   cameraCard.style.display = '';
   setFilePickerVisible(true);
-  pendingFilesCard.style.display = '';
-  renderPendingFiles(lastPendingFiles.filter(f => f.folderId === k.folderId));
+  // 2026-08-29変更: 送信済み一覧はホーム画面専用(種別横断)になったため、
+  // カメラ画面ではもう表示しない(pendingFilesCardの表示・更新はrenderKindHome側で行う)。
   startCamera(); // 2026-08-27追加: 種類が決まった時点で「カメラで撮影」画面を挟まず即カメラを起動する
+}
+
+// 2026-08-29追加: カメラ停止時に、選んだ大項目の状況に応じてサブ一覧(候補2件以上あった場合)
+// またはホーム(候補1件で選択画面を飛ばしていた場合)へ戻す。「停止後の画面」という別画面を
+// 挟まず、撮影を終えたら常に一つ前の選択画面へ戻る、という導線にするための処理。
+function returnToPicker() {
+  selectedKind = null; // カメラ画面から離れるため、選択中の種類はいったんクリアする
+  const grouped = groupKindsByMajor(customerKinds);
+  const list = lastMajorCategory ? grouped[lastMajorCategory] : null;
+  currentKindBar.style.display = 'none';
+  cameraCard.style.display = 'none';
+  if (list && list.length > 1) {
+    kindPickerCard.style.display = '';
+    renderKindSubList(lastMajorCategory, list);
+  } else {
+    renderKindHome();
+  }
 }
 
 kindPickerBackBtn.addEventListener('click', renderKindHome);
@@ -996,7 +1060,12 @@ async function sendFiles() {
 }
 
 btnStart.addEventListener('click', startCamera);
-btnStop.addEventListener('click', stopCameraManually);
+// 2026-08-29変更: 「カメラを停止」後に留まる専用画面を廃止し、撮影を終えたら
+// 一つ前の選択画面(サブ一覧、または候補1件で飛ばしていた場合はホーム)へ戻す。
+btnStop.addEventListener('click', () => {
+  stopCameraManually();
+  returnToPicker();
+});
 btnSwitch.addEventListener('click', () => {
   facingMode = facingMode === 'environment' ? 'user' : 'environment';
   startCamera();
