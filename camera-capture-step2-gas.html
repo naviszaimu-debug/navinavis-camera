@@ -975,24 +975,36 @@ async function sendQueue() {
   if (sending) return;
   sending = true;
   btnSend.disabled = true;
-  const total = capturedQueue.length;
+  // 2026-08-31追加(顧客Iの実機テストで発見: 分割撮影モードの写真が「g1p1ofundefined」等の
+  // 壊れたファイル名で送信され、PoNavisLog側のグループ判定が一致せず1証憑としてまとまらず
+  // 別々の証憑として処理されてしまった不具合の修正)。原因は、下のgroupTotalsを
+  // capturedQueueから「送信開始時点のスナップショット」ではなく生配列から直接計算していたため、
+  // 送信中に新しい写真が追加される(下のfor文はcapturedQueue.lengthを毎回見るので、追加された
+  // 写真も同じ送信ループに巻き込まれてしまう)と、その写真の分だけgroupTotalsに反映されておらず
+  // undefinedになっていた。btnShoot/btnBurstStartを送信中は無効化して新規追加自体を防ぐのに加え、
+  // 万一何らかの経路で追加されても影響を受けないよう、送信対象を送信開始時点の配列コピー
+  // (itemsToSend)に固定し、以降は生きたcapturedQueueを一切参照しないようにする。
+  btnShoot.disabled = true;
+  btnBurstStart.disabled = true;
+  const itemsToSend = capturedQueue.slice();
+  const total = itemsToSend.length;
   const results = [];
   showSendingOverlay('送信中… (1/' + total + ')'); // 2026-08-31追加
 
   // グループごとの総ページ数を先に数えておく(送信中に「N枚中の何枚目」を確定させるため)
   const groupTotals = {};
-  capturedQueue.forEach(item => {
+  itemsToSend.forEach(item => {
     if (item.groupId) groupTotals[item.groupId] = (groupTotals[item.groupId] || 0) + 1;
   });
   const groupSeenCounts = {};
 
-  for (let i = 0; i < capturedQueue.length; i++) {
+  for (let i = 0; i < itemsToSend.length; i++) {
     setStatus('送信中… (' + (i + 1) + '/' + total + ')');
     updateSendingOverlay('送信中… (' + (i + 1) + '/' + total + ')'); // 2026-08-31追加
     try {
       const now = new Date();
       const pad = n => String(n).padStart(2, '0');
-      const item = capturedQueue[i];
+      const item = itemsToSend[i];
 
       let groupPage = null;
       let groupTotal = null;
@@ -1040,12 +1052,22 @@ async function sendQueue() {
   }
 
   const successCount = results.filter(Boolean).length;
-  capturedQueue = capturedQueue.filter((item, i) => !results[i]);
+  // 2026-08-31修正: 送信対象をitemsToSend(スナップショット)に固定した以上、送信済み判定も
+  // 生きたcapturedQueue上のインデックスではなくid照合で行う(送信中に新しい写真が追加されて
+  // capturedQueueとitemsToSendの並びがズレても正しく取り除けるようにするため)。
+  const sentIds = new Set(itemsToSend.filter((item, i) => results[i]).map(it => it.id));
+  capturedQueue = capturedQueue.filter(item => !sentIds.has(item.id));
   const remainingIds = new Set(capturedQueue.map(it => it.id));
   Array.from(selectedItemIds).forEach(id => { if (!remainingIds.has(id)) selectedItemIds.delete(id); });
   // 2026-08-31追加: renderQueue()より前にsending=falseへ戻す(renderQueue()内のbtnSend.disabled
   // 判定がsendingを見るため、先に戻しておかないと送信完了後もボタンが無効のままになってしまう)。
   sending = false;
+  // 2026-08-31追加: 送信中に無効化した撮影/分割撮影モード開始ボタンを、カメラが起動中であれば
+  // 再度有効化する(未起動のまま送信だけした場合はcameraStartedがfalseなので無効のまま維持)。
+  if (cameraStarted) {
+    btnShoot.disabled = false;
+    btnBurstStart.disabled = false;
+  }
   hideSendingOverlay();
   renderQueue();
 
