@@ -964,6 +964,47 @@ function blobToBase64(blob) {
   });
 }
 
+// 2026-08-31追加: 送信が「くそ遅い」との指摘(祥希さん)への対応。ネイティブカメラ化(2026-08-31、
+// 前述)以降、写真を一切圧縮せずそのままbase64化してGASへ送っていたため、1枚あたり数MB級の
+// ペイロードになり送信に時間がかかっていた。PoNavisLog側はどのみちClaude API送信前に大きい画像を
+// 自動縮小する(claude_pipeline._shrink_image_to_fit)ため、アップロード時点である程度(長辺
+// UPLOAD_MAX_DIMENSION)まで縮小しておいても文字の読みやすさはほぼ落とさず、送信データ量・時間を
+// 大きく減らせる。<img>+canvasで描画するとブラウザがEXIF Orientationを反映した「見た目通り」の
+// 向きで描画するため、出力されるJPEGは画素データに回転が焼き込み済み・EXIFタグ無しの状態になり、
+// PoNavisLog側のEXIF正規化処理は不要(かつ無害)になる副次効果もある。
+// HEIC等、ブラウザがcanvasに描画できない形式の場合はimg.onerrorで検知し、元のファイルをそのまま
+// 返す(圧縮できないだけで、送信自体は今まで通り成功させるための安全側フォールバック)。
+const UPLOAD_MAX_DIMENSION = 2200;
+const UPLOAD_JPEG_QUALITY = 0.85;
+// sendQueue()・sendFiles()で共用する拡張子対応表(Blob/FileのMIMEタイプ→拡張子)。
+const MIME_TO_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+function replaceExtension(filename, newExt) {
+  const dot = filename.lastIndexOf('.');
+  return (dot > 0 ? filename.slice(0, dot) : filename) + '.' + newExt;
+}
+
+function compressImageForUpload(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h) { resolve(file); return; }
+      const scale = Math.min(1, UPLOAD_MAX_DIMENSION / Math.max(w, h));
+      if (scale >= 1) { resolve(file); return; } // 既に十分小さい場合は無圧縮のまま送る
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', UPLOAD_JPEG_QUALITY);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 async function sendQueue() {
   if (GAS_URL.indexOf('ここに') === 0) {
     setStatus('GAS_URL が設定されていません。HTMLファイル内の GAS_URL を、デプロイ後のウェブアプリURLに書き換えてください。', 'error');
@@ -1016,18 +1057,21 @@ async function sendQueue() {
         groupSuffix = `_g${item.groupId}p${groupPage}of${groupTotal}`;
       }
 
+      // 2026-08-31追加: 送信前に長辺UPLOAD_MAX_DIMENSIONまで縮小(圧縮できない形式は元のまま)。
+      const uploadBlob = await compressImageForUpload(item.blob);
+
       // 2026-08-31修正(ネイティブカメラ呼び出し化に伴い発見): 以前はcanvas.toBlob(...,'image/jpeg')の
       // 出力しか無かったため.jpg/image/jpeg固定で正しかったが、ネイティブカメラの出力は端末の設定次第で
       // JPEG以外(例: iPhoneの「高効率」設定時のHEIC)にもなりうる。実際のBlob/File自体が持つ
-      // .type(sendFiles()側で既に使っている値と同じ考え方)を使い、拡張子もそれに合わせる。
+      // .type(sendFiles()側で既に使っている値と同じ考え方)を使い、拡張子もそれに合わせる
+      // (compressImageForUploadが成功していれば常にimage/jpegになり、失敗時は元のtypeのまま)。
       // PoNavisLog側はファイル拡張子からmedia_typeを推測するため、ここでの誤表示は
       // 「実際と違う形式としてAPIに送ってしまう」事故に直結する(拡張子さえ正しければ、
       // 非対応形式でもPoNavisLog側でエラーとして正しく検知できる)。
-      const mimeType = item.blob.type || 'image/jpeg';
-      const extMap = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif' };
-      const ext = extMap[mimeType] || 'jpg';
+      const mimeType = uploadBlob.type || 'image/jpeg';
+      const ext = MIME_TO_EXT[mimeType] || 'jpg';
       const filename = `receipt_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${i}${groupSuffix}.${ext}`;
-      const base64 = await blobToBase64(item.blob);
+      const base64 = await blobToBase64(uploadBlob);
 
       const res = await fetch(GAS_URL, {
         method: 'POST',
@@ -1124,15 +1168,21 @@ async function sendFiles() {
     li.textContent = `${file.name}: 送信中…`;
     updateSendingOverlay('送信中… (' + (i + 1) + '/' + filesTotal + ')'); // 2026-08-31追加
     try {
-      const base64 = await blobToBase64(file);
-      const filename = `upload_${prefix}_${i}_${file.name}`;
+      // 2026-08-31追加: 画像ファイルのみ送信前に縮小する(PDF等それ以外はそのまま送る)。
+      const uploadBlob = file.type && file.type.startsWith('image/') ? await compressImageForUpload(file) : file;
+      const mimeType = uploadBlob.type || file.type || 'application/octet-stream';
+      const base64 = await blobToBase64(uploadBlob);
+      // 圧縮でJPEGに変換された場合、ファイル名の拡張子も実体に合わせて書き換える
+      // (拡張子と中身が食い違うと、PoNavisLog側の拡張子ベースの形式判定と噛み合わなくなるため)。
+      const outName = uploadBlob !== file && MIME_TO_EXT[mimeType] ? replaceExtension(file.name, MIME_TO_EXT[mimeType]) : file.name;
+      const filename = `upload_${prefix}_${i}_${outName}`;
       const res = await fetch(GAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           image: base64,
           filename,
-          mimeType: file.type || 'application/octet-stream',
+          mimeType,
           token: TOKEN,
           folderId: selectedKind ? selectedKind.folderId : undefined // 2026-08-27追加
         })
