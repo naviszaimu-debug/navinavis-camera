@@ -349,10 +349,12 @@
        ⑥スマホ内の写真・PDFを送信。「カメラを停止」ボタンは実際にはもう「停止」する対象(映像
        ストリーム)が無く、単に前の選択画面へ戻るだけの動作のため「← 戻る」に改称した
        (押した時の処理(stopCameraManually→returnToPicker)自体は変更していない)。 -->
+  <!-- 2026-08-31(続き)変更(祥希さんの指摘: 標準カメラアプリ自体に前後切替が付いているので不要):
+       前後切替ボタン(btnSwitch)・facingMode変数ごと削除。cameraFileInputのcapture属性は
+       常に"environment"(背面)固定のまま(証憑撮影は背面カメラ前提のため)。 -->
   <div class="row camera-top-row">
     <button id="btnStart" style="display:none;">カメラ起動</button>
     <button id="btnStop" class="secondary" style="display:none;">← 戻る</button>
-    <button id="btnSwitch" class="secondary" disabled>前後切替</button>
   </div>
   <div id="cameraPlaceholder" class="camera-placeholder">📷「撮影」を押すとカメラが起動します</div>
   <input type="file" id="cameraFileInput" accept="image/*" capture="environment" style="display:none;">
@@ -360,6 +362,14 @@
   <div class="row">
     <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
   </div>
+
+  <!-- 2026-08-31(続き)変更(祥希さんの指摘: 表示順を分割撮影モード→未送信一覧の順に、
+       分割撮影モードは見出し無しでボタン+説明文だけでよい)。 -->
+  <div class="row">
+    <button id="btnBurstStart" class="secondary" disabled>分割撮影モード開始</button>
+    <button id="btnBurstEnd" style="display:none;">分割撮影モード終了</button>
+  </div>
+  <p class="note" id="burstHint" style="margin:4px 0 0;">通帳や長いレシートなど、複数枚まとめて1つの証憑として送りたい時だけ使ってください。</p>
 
   <h2 class="card-title camera-section-title">未送信一覧</h2>
   <div id="queueThumbs" class="thumb-row"></div>
@@ -372,13 +382,6 @@
   <div class="row">
     <button id="btnSend" style="display:none;">送信(ドライブに保存)</button>
   </div>
-
-  <h2 class="card-title camera-section-title">分割撮影モード</h2>
-  <div class="row">
-    <button id="btnBurstStart" class="secondary" disabled>分割撮影モード開始</button>
-    <button id="btnBurstEnd" style="display:none;">分割撮影モード終了</button>
-  </div>
-  <p class="note" id="burstHint" style="margin:4px 0 0;">通帳や長いレシートなど、複数枚まとめて1つの証憑として送りたい時だけ使ってください。</p>
 
   <!-- 2026-08-29変更: カメラ起動中(フルスクリーン表示中)でも撮影ボタンの下にスクロールして
        到達できるよう、cameraCardの子要素に変更(以前は兄弟要素で、フルスクリーン中はカメラの
@@ -434,7 +437,6 @@ const queueThumbs = document.getElementById('queueThumbs');
 const cameraCard = document.getElementById('cameraCard');
 const btnStart = document.getElementById('btnStart');
 const btnStop = document.getElementById('btnStop');
-const btnSwitch = document.getElementById('btnSwitch');
 const btnShoot = document.getElementById('btnShoot');
 const btnRetake = document.getElementById('btnRetake');
 const btnSend = document.getElementById('btnSend');
@@ -536,7 +538,6 @@ let sending = false;
 let capturedQueue = []; // { id, blob, url, groupId, groupLabel }
 let itemSeqCounter = 0;
 let selectedFiles = [];
-let facingMode = 'environment';
 
 // 分割撮影モード(複数枚を1つの証憑としてグルーピングする機能)の状態
 let burstActive = false;
@@ -792,7 +793,6 @@ async function deletePendingFile(fileId, wrapEl) {
 function startCamera() {
   cameraStarted = true;
   btnShoot.disabled = false;
-  btnSwitch.disabled = false;
   btnBurstStart.disabled = false;
   btnStart.style.display = 'none';
   btnStop.style.display = 'block';
@@ -809,7 +809,6 @@ function stopCameraManually() {
   cameraStarted = false;
   if (burstActive) endBurstMode();
   btnShoot.disabled = true;
-  btnSwitch.disabled = true;
   btnBurstStart.disabled = true;
   btnStart.style.display = 'block';
   btnStop.style.display = 'none';
@@ -821,8 +820,10 @@ function stopCameraManually() {
 // パイプラインを一切経由しない)をやめ、<input type="file" capture>でスマホ標準のカメラアプリを
 // 直接呼び出す方式に変更した。ImageCapture API(track.takePhoto())も検討したが、iOS Safari非対応
 // のため見送り、iOS/Androidどちらでも画質改善が効くこちらを祥希さんと合意のうえ採用した。
+// 2026-08-31(続き)変更(祥希さんの指摘: 標準カメラアプリ自体に前後切替が付いているので不要):
+// capture属性の動的切替(facingMode)は廃止し、HTML側の固定値("environment"、証憑撮影は
+// 背面カメラ前提)のままclick()するだけにした。
 function shoot() {
-  cameraFileInput.setAttribute('capture', facingMode === 'user' ? 'user' : 'environment');
   cameraFileInput.click();
 }
 
@@ -1128,12 +1129,6 @@ btnStart.addEventListener('click', startCamera);
 btnStop.addEventListener('click', () => {
   stopCameraManually();
   returnToPicker();
-});
-// 2026-08-31変更: ライブ映像ストリームが無くなったため、再起動は不要。次に「撮影」を
-// 押した時に使うカメラの向きを切り替えるだけ(実際の切替はネイティブカメラ側でも可能)。
-btnSwitch.addEventListener('click', () => {
-  facingMode = facingMode === 'environment' ? 'user' : 'environment';
-  setStatus('次の撮影は' + (facingMode === 'environment' ? '背面' : '前面') + 'カメラを使用します。', 'ok');
 });
 btnShoot.addEventListener('click', shoot);
 cameraFileInput.addEventListener('change', handleCameraFileCapture); // 2026-08-31追加
