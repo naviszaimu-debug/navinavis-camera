@@ -1004,7 +1004,17 @@ async function sendQueue() {
         groupSuffix = `_g${item.groupId}p${groupPage}of${groupTotal}`;
       }
 
-      const filename = `receipt_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${i}${groupSuffix}.jpg`;
+      // 2026-08-31修正(ネイティブカメラ呼び出し化に伴い発見): 以前はcanvas.toBlob(...,'image/jpeg')の
+      // 出力しか無かったため.jpg/image/jpeg固定で正しかったが、ネイティブカメラの出力は端末の設定次第で
+      // JPEG以外(例: iPhoneの「高効率」設定時のHEIC)にもなりうる。実際のBlob/File自体が持つ
+      // .type(sendFiles()側で既に使っている値と同じ考え方)を使い、拡張子もそれに合わせる。
+      // PoNavisLog側はファイル拡張子からmedia_typeを推測するため、ここでの誤表示は
+      // 「実際と違う形式としてAPIに送ってしまう」事故に直結する(拡張子さえ正しければ、
+      // 非対応形式でもPoNavisLog側でエラーとして正しく検知できる)。
+      const mimeType = item.blob.type || 'image/jpeg';
+      const extMap = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif' };
+      const ext = extMap[mimeType] || 'jpg';
+      const filename = `receipt_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${i}${groupSuffix}.${ext}`;
       const base64 = await blobToBase64(item.blob);
 
       const res = await fetch(GAS_URL, {
@@ -1013,7 +1023,7 @@ async function sendQueue() {
         body: JSON.stringify({
           image: base64,
           filename,
-          mimeType: 'image/jpeg',
+          mimeType,
           token: TOKEN,
           folderId: selectedKind ? selectedKind.folderId : undefined, // 2026-08-27追加
           groupId: item.groupId,
