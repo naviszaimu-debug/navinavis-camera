@@ -984,6 +984,22 @@ function replaceExtension(filename, newExt) {
   return (dot > 0 ? filename.slice(0, dot) : filename) + '.' + newExt;
 }
 
+// 2026-08-31追加: 送信速度改善(その2)。圧縮だけでは律速要因(1枚ずつの逐次送信)が残っていた
+// ため、UPLOAD_CONCURRENCY件ずつ並列に送信する。GAS Webアプリ側の同時実行数制限を考慮し、
+// 全件同時にではなく少数ずつ束ねて処理する(sendQueue()・sendFiles()で共用)。
+const UPLOAD_CONCURRENCY = 3;
+
+async function runConcurrent(count, concurrency, worker) {
+  let nextIndex = 0;
+  async function run() {
+    while (nextIndex < count) {
+      const i = nextIndex++;
+      await worker(i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, count) }, run));
+}
+
 function compressImageForUpload(file) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -1029,33 +1045,33 @@ async function sendQueue() {
   btnBurstStart.disabled = true;
   const itemsToSend = capturedQueue.slice();
   const total = itemsToSend.length;
-  const results = [];
-  showSendingOverlay('送信中… (1/' + total + ')'); // 2026-08-31追加
+  const results = new Array(total);
+  let completedCount = 0;
+  showSendingOverlay('送信中… (0/' + total + ')'); // 2026-08-31追加
 
-  // グループごとの総ページ数を先に数えておく(送信中に「N枚中の何枚目」を確定させるため)
+  // グループごとの総ページ数、および各アイテムのgroupPage(何ページ目か)を、送信を始める前に
+  // すべて確定させておく(2026-08-31追加: 並列送信に変えても、完了順ではなく元の並び順で
+  // 「何ページ目か」が決まるようにするため)。
   const groupTotals = {};
   itemsToSend.forEach(item => {
     if (item.groupId) groupTotals[item.groupId] = (groupTotals[item.groupId] || 0) + 1;
   });
   const groupSeenCounts = {};
+  const itemMeta = itemsToSend.map(item => {
+    if (!item.groupId) return { groupPage: null, groupTotal: null };
+    groupSeenCounts[item.groupId] = (groupSeenCounts[item.groupId] || 0) + 1;
+    return { groupPage: groupSeenCounts[item.groupId], groupTotal: groupTotals[item.groupId] };
+  });
 
-  for (let i = 0; i < itemsToSend.length; i++) {
-    setStatus('送信中… (' + (i + 1) + '/' + total + ')');
-    updateSendingOverlay('送信中… (' + (i + 1) + '/' + total + ')'); // 2026-08-31追加
+  // 2026-08-31追加: 送信速度改善のため、1枚ずつの逐次送信からUPLOAD_CONCURRENCY件ずつの
+  // 並列送信に変更(runConcurrent参照)。
+  await runConcurrent(total, UPLOAD_CONCURRENCY, async (i) => {
+    const item = itemsToSend[i];
+    const { groupPage, groupTotal } = itemMeta[i];
+    const groupSuffix = item.groupId ? `_g${item.groupId}p${groupPage}of${groupTotal}` : '';
     try {
       const now = new Date();
       const pad = n => String(n).padStart(2, '0');
-      const item = itemsToSend[i];
-
-      let groupPage = null;
-      let groupTotal = null;
-      let groupSuffix = '';
-      if (item.groupId) {
-        groupSeenCounts[item.groupId] = (groupSeenCounts[item.groupId] || 0) + 1;
-        groupPage = groupSeenCounts[item.groupId];
-        groupTotal = groupTotals[item.groupId];
-        groupSuffix = `_g${item.groupId}p${groupPage}of${groupTotal}`;
-      }
 
       // 2026-08-31追加: 送信前に長辺UPLOAD_MAX_DIMENSIONまで縮小(圧縮できない形式は元のまま)。
       const uploadBlob = await compressImageForUpload(item.blob);
@@ -1089,11 +1105,16 @@ async function sendQueue() {
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || '不明なエラー');
-      results.push(true);
+      results[i] = true;
     } catch (e) {
-      results.push(false);
+      results[i] = false;
     }
-  }
+    // 2026-08-31追加: 並列送信では完了順が元の並びと一致しないため、進捗は
+    // 「(何番目を処理中)」ではなく「完了した枚数」で表示する。
+    completedCount++;
+    setStatus('送信中… (' + completedCount + '/' + total + ')');
+    updateSendingOverlay('送信中… (' + completedCount + '/' + total + ')');
+  });
 
   const successCount = results.filter(Boolean).length;
   // 2026-08-31修正: 送信対象をitemsToSend(スナップショット)に固定した以上、送信済み判定も
@@ -1158,15 +1179,20 @@ async function sendFiles() {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const prefix = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  const results = [];
-  const filesTotal = selectedFiles.length;
-  showSendingOverlay('送信中… (1/' + filesTotal + ')'); // 2026-08-31追加
+  // 2026-08-31追加: sendQueue()と同じく、送信対象を送信開始時点のスナップショットに固定する
+  // (送信中に新しいファイルが選択されても、その回の送信には影響させないため)。
+  const filesToSend = selectedFiles.slice();
+  const total = filesToSend.length;
+  const results = new Array(total);
+  let completedCount = 0;
+  showSendingOverlay('送信中… (0/' + total + ')'); // 2026-08-31追加
 
-  for (let i = 0; i < selectedFiles.length; i++) {
-    const file = selectedFiles[i];
+  // 2026-08-31追加: 送信速度改善のため、1件ずつの逐次送信からUPLOAD_CONCURRENCY件ずつの
+  // 並列送信に変更(runConcurrent参照)。
+  await runConcurrent(total, UPLOAD_CONCURRENCY, async (i) => {
+    const file = filesToSend[i];
     const li = document.getElementById('file-status-' + i);
-    li.textContent = `${file.name}: 送信中…`;
-    updateSendingOverlay('送信中… (' + (i + 1) + '/' + filesTotal + ')'); // 2026-08-31追加
+    if (li) li.textContent = `${file.name}: 送信中…`;
     try {
       // 2026-08-31追加: 画像ファイルのみ送信前に縮小する(PDF等それ以外はそのまま送る)。
       const uploadBlob = file.type && file.type.startsWith('image/') ? await compressImageForUpload(file) : file;
@@ -1189,15 +1215,23 @@ async function sendFiles() {
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || '不明なエラー');
-      li.textContent = `${file.name}: 完了`;
-      results.push(true);
+      if (li) li.textContent = `${file.name}: 完了`;
+      results[i] = true;
     } catch (e) {
-      li.textContent = `${file.name}: 失敗(${e.message})`;
-      results.push(false);
+      if (li) li.textContent = `${file.name}: 失敗(${e.message})`;
+      results[i] = false;
     }
-  }
+    // 2026-08-31追加: 並列送信では完了順が元の並びと一致しないため、進捗は完了枚数で表示する。
+    completedCount++;
+    updateSendingOverlay('送信中… (' + completedCount + '/' + total + ')');
+  });
 
-  selectedFiles = selectedFiles.filter((f, i) => !results[i]);
+  // 2026-08-31修正: 送信対象をfilesToSend(スナップショット)に固定した以上、送信済み判定も
+  // インデックスではなくFileオブジェクトそのものの参照一致で行う(sendQueue()のid照合と
+  // 同じ考え方。送信中に新しいファイルが追加されてselectedFilesとfilesToSendの並びが
+  // ズレても正しく取り除けるようにするため)。
+  const sentFiles = new Set(filesToSend.filter((f, i) => results[i]));
+  selectedFiles = selectedFiles.filter(f => !sentFiles.has(f));
   renderFileList();
   sending = false;
   hideSendingOverlay();
