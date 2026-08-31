@@ -196,6 +196,37 @@
     font-size: 1.2rem;
     border: none;
   }
+  /* 2026-08-31追加(祥希さんの指摘: 送信中はPoNavisLogのように画面をロックしたい)。
+     .modal-overlayより手前(z-index)に出す。 */
+  .sending-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+  }
+  .sending-overlay.open { display: flex; }
+  .sending-overlay-box {
+    background: #fff;
+    color: #222;
+    border-radius: 12px;
+    padding: 28px 32px;
+    text-align: center;
+    font-size: 1rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+  .sending-spinner {
+    width: 32px;
+    height: 32px;
+    border: 4px solid #ddd;
+    border-top-color: #1a73e8;
+    border-radius: 50%;
+    margin: 0 auto 14px;
+    animation: sending-spin 0.8s linear infinite;
+  }
+  @keyframes sending-spin { to { transform: rotate(360deg); } }
   /* 2026-08-31変更: フルスクリーン(黒背景・画面全体固定)表示は廃止。ライブ映像プレビューが
      無くなり、常時表示の内容もコンパクトになったため、他のカードと同じ通常表示で十分
      スクロール無しに近い操作性が確保できる(祥希さんの指摘: 枠だけ大きく場所を取っていた)。
@@ -378,6 +409,16 @@
   <img id="modalImg" src="" alt="">
 </div>
 
+<!-- 2026-08-31追加(祥希さんの指摘: PoNavisLogの処理中ロックのように、送信中は画面をロックしたい):
+     送信中(sendQueue/sendFiles)は画面全体を覆い、進捗を表示する。ボタンの無効化に加えて画面自体を
+     操作できなくすることで、二重送信の見た目上の分かりやすさも兼ねる。 -->
+<div id="sendingOverlay" class="sending-overlay">
+  <div class="sending-overlay-box">
+    <div class="sending-spinner"></div>
+    <div id="sendingOverlayText">送信中…</div>
+  </div>
+</div>
+
 <script>
 // ↓↓↓ GASを「ウェブアプリ」としてデプロイした後に表示されるURLを、ここに貼ってください ↓↓↓
 const GAS_URL = "https://script.google.com/macros/s/AKfycbxxRSsk49ivNhLan-pW49Q6qyU0812RIo7VC5cv_Ui4kHFkpZcqG-H3sDiOCY_WXLZj/exec";
@@ -440,6 +481,20 @@ const imageModal = document.getElementById('imageModal');
 const modalImg = document.getElementById('modalImg');
 const modalClose = document.getElementById('modalClose');
 
+// 2026-08-31追加(祥希さんの指摘: 送信中はPoNavisLogのように画面をロックしたい)。
+const sendingOverlay = document.getElementById('sendingOverlay');
+const sendingOverlayText = document.getElementById('sendingOverlayText');
+function showSendingOverlay(text) {
+  sendingOverlayText.textContent = text;
+  sendingOverlay.classList.add('open');
+}
+function updateSendingOverlay(text) {
+  sendingOverlayText.textContent = text;
+}
+function hideSendingOverlay() {
+  sendingOverlay.classList.remove('open');
+}
+
 function openImageModal(src, alt) {
   if (!src) return;
   modalImg.src = src;
@@ -471,6 +526,13 @@ filePickerToggle.addEventListener('click', () => {
 });
 
 let cameraStarted = false; // 2026-08-31変更: 映像ストリームを保持しなくなったため、単純な状態フラグに変更
+// 2026-08-31追加(祥希さんの実機報告: 送信ボタンを二重に押すとDriveに二重送信される):
+// sendQueue()開始時にbtnSend.disabled=trueにしていても、送信中に撮影・削除等でrenderQueue()が
+// 呼ばれると、そちらのbtnSend.disabled=!hasItemsが送信中かどうかを見ずにボタンを再度有効化して
+// しまっていた(capturedQueueから送信済み項目を取り除くのはループ完了後のため、送信中は
+// 見た目上「まだ残っている」ように見える)。このフラグをrenderQueue()側でも参照することで、
+// 送信中は何が起きてもボタンが再度有効にならないようにする。
+let sending = false;
 let capturedQueue = []; // { id, blob, url, groupId, groupLabel }
 let itemSeqCounter = 0;
 let selectedFiles = [];
@@ -831,7 +893,9 @@ function renderQueue() {
   const hasItems = capturedQueue.length > 0;
   // 分割撮影モード中は送信ボタンを隠す(自動送信はしない。モード終了で再表示されるだけ)
   btnSend.style.display = (hasItems && !burstActive) ? 'block' : 'none';
-  btnSend.disabled = !hasItems;
+  // 2026-08-31修正: sendingを見ずに!hasItemsだけで有効/無効を決めていたため、送信中に
+  // renderQueue()が呼ばれる(撮影・削除等)と送信ボタンが再度有効になり、二重送信を招いていた。
+  btnSend.disabled = !hasItems || sending;
   btnRetake.style.display = hasItems ? 'block' : 'none';
   updateBulkUngroupBar();
 }
@@ -905,9 +969,14 @@ async function sendQueue() {
     return;
   }
   if (capturedQueue.length === 0) return;
+  // 2026-08-31追加: 送信中の多重起動を防ぐ(関数の再入防御。renderQueue()側のガードと合わせた
+  // 二重の安全策)。
+  if (sending) return;
+  sending = true;
   btnSend.disabled = true;
   const total = capturedQueue.length;
   const results = [];
+  showSendingOverlay('送信中… (1/' + total + ')'); // 2026-08-31追加
 
   // グループごとの総ページ数を先に数えておく(送信中に「N枚中の何枚目」を確定させるため)
   const groupTotals = {};
@@ -918,6 +987,7 @@ async function sendQueue() {
 
   for (let i = 0; i < capturedQueue.length; i++) {
     setStatus('送信中… (' + (i + 1) + '/' + total + ')');
+    updateSendingOverlay('送信中… (' + (i + 1) + '/' + total + ')'); // 2026-08-31追加
     try {
       const now = new Date();
       const pad = n => String(n).padStart(2, '0');
@@ -962,6 +1032,10 @@ async function sendQueue() {
   capturedQueue = capturedQueue.filter((item, i) => !results[i]);
   const remainingIds = new Set(capturedQueue.map(it => it.id));
   Array.from(selectedItemIds).forEach(id => { if (!remainingIds.has(id)) selectedItemIds.delete(id); });
+  // 2026-08-31追加: renderQueue()より前にsending=falseへ戻す(renderQueue()内のbtnSend.disabled
+  // 判定がsendingを見るため、先に戻しておかないと送信完了後もボタンが無効のままになってしまう)。
+  sending = false;
+  hideSendingOverlay();
   renderQueue();
 
   if (successCount === total) {
@@ -987,7 +1061,9 @@ function renderFileList() {
 filePicker.addEventListener('change', () => {
   selectedFiles = selectedFiles.concat(Array.from(filePicker.files));
   renderFileList();
-  btnSendFiles.disabled = selectedFiles.length === 0;
+  // 2026-08-31修正: sendQueue()/renderQueue()と同じ二重送信バグがここにもあった
+  // (送信中にファイルを追加選択するとbtnSendFilesが再度有効になってしまう)。sendingを見る。
+  btnSendFiles.disabled = selectedFiles.length === 0 || sending;
   filePicker.value = '';
 });
 
@@ -997,16 +1073,23 @@ async function sendFiles() {
     return;
   }
   if (selectedFiles.length === 0) return;
+  // 2026-08-31追加: sendQueue()と同じ再入防御+送信中フラグの共有(カメラキューの送信と
+  // ファイル選択送信を同時に走らせない。GASへの同時多重リクエストを避けるため)。
+  if (sending) return;
+  sending = true;
   btnSendFiles.disabled = true;
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const prefix = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   const results = [];
+  const filesTotal = selectedFiles.length;
+  showSendingOverlay('送信中… (1/' + filesTotal + ')'); // 2026-08-31追加
 
   for (let i = 0; i < selectedFiles.length; i++) {
     const file = selectedFiles[i];
     const li = document.getElementById('file-status-' + i);
     li.textContent = `${file.name}: 送信中…`;
+    updateSendingOverlay('送信中… (' + (i + 1) + '/' + filesTotal + ')'); // 2026-08-31追加
     try {
       const base64 = await blobToBase64(file);
       const filename = `upload_${prefix}_${i}_${file.name}`;
@@ -1033,6 +1116,8 @@ async function sendFiles() {
 
   selectedFiles = selectedFiles.filter((f, i) => !results[i]);
   renderFileList();
+  sending = false;
+  hideSendingOverlay();
   btnSendFiles.disabled = selectedFiles.length === 0;
   if (results.some(Boolean)) loadCustomerInfo();
 }
