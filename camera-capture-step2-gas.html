@@ -81,13 +81,22 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.15);
   }
   h2.card-title { font-size: 1rem; margin: 0 0 8px; }
-  video, canvas {
+  /* 2026-08-31変更: <video>/<canvas>によるライブプレビュー撮影をやめ、ネイティブカメラ
+     呼び出し方式に変更したことに伴い、プレースホルダー用のスタイルに置き換えた。 */
+  .camera-placeholder {
     width: 100%;
+    min-height: 160px;
     border-radius: 8px;
     background: #000;
-    display: block;
+    color: #ccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    box-sizing: border-box;
+    font-size: 0.95rem;
   }
-  canvas { display: none; }
   .thumb-row {
     display: flex;
     flex-wrap: wrap;
@@ -204,12 +213,23 @@
     box-sizing: border-box;
     overflow-y: auto;
   }
-  .camera-card.fullscreen-mode video {
+  .camera-card.fullscreen-mode .camera-placeholder {
     flex: 1 1 auto;
     min-height: 0;
-    object-fit: cover;
   }
   .camera-card.fullscreen-mode .card-title { color: #fff; }
+  /* 2026-08-31追加: 常時表示は「カメラを停止/前後切替/メニュー」の3列だけにする(min-width:100pxの
+     既定だと3列で幅が足りず折り返してしまう端末があるため、この行だけ縮められるようにする)。 */
+  .camera-top-row button { min-width: 0; }
+  /* メニューボタンで開閉する折りたたみパネル。フルスクリーン時は背景が黒(#111)になるため、
+     中の文字(.note等)が読めるよう白背景のカードにする。 */
+  .camera-menu-panel {
+    background: #fff;
+    color: #222;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+  }
   .burst-badge {
     background: #d93025;
     color: #fff;
@@ -311,45 +331,60 @@
 </div>
 
 <div class="card camera-card" id="cameraCard" style="display:none;">
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="canvas"></canvas>
+  <!-- 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): getUserMedia+<video>+
+       canvasでライブ映像のフレームをそのまま静止画化する方式をやめ、隠しファイル入力
+       (accept="image/*" capture)でスマホ標準のカメラアプリを直接呼び出す方式に変更した。
+       ImageCapture API(track.takePhoto())も検討したがiOS Safari非対応のため見送り、
+       全機種で画質改善が効くこちらを採用(祥希さんと合意)。ライブプレビューはネイティブの
+       カメラアプリ側が担うため、ページ側はプレースホルダーを表示するだけでよい。 -->
+  <div id="cameraPlaceholder" class="camera-placeholder">📷「撮影」を押すとカメラが起動します</div>
+  <input type="file" id="cameraFileInput" accept="image/*" capture="environment" style="display:none;">
   <div id="burstBadge" class="burst-badge" style="display:none;"></div>
-  <div id="queueThumbs" class="thumb-row"></div>
-  <div id="bulkUngroupBar" class="row" style="display:none;">
-    <button id="btnBulkUngroup" class="secondary" type="button">選択した写真をグループから外す</button>
-  </div>
-  <!-- 2026-08-27変更: 種類を選んだ時点で自動でカメラが起動するようにしたため、
-       「カメラ起動」ボタンは初期非表示(停止後の再起動用にのみ残す) -->
-  <div class="row">
+
+  <!-- 2026-08-31変更(祥希さんの指摘: 撮影以外のボタン・サムネイルが常時表示だと撮影部分を
+       圧迫する): 常時表示は「カメラを停止/前後切替/メニュー」の3列(1行目)+「撮影」(2行目)の
+       2行だけにし、それ以外(分割撮影・削除・送信・サムネイル一覧・ファイル選択送信)は
+       #cameraMenuPanelへ集約してメニューボタンで開閉する。
+       「カメラ起動」ボタンは初期非表示のまま(停止後の再起動用)、btnStopと同じ列に表示位置を
+       揃える(表示/非表示はJS側で従来通りstyle.display切替、位置だけ変更)。 -->
+  <div class="row camera-top-row">
     <button id="btnStart" style="display:none;">カメラ起動</button>
     <button id="btnStop" class="secondary" style="display:none;">カメラを停止</button>
     <button id="btnSwitch" class="secondary" disabled>前後切替</button>
+    <button id="btnCameraMenu" type="button" class="secondary">メニュー</button>
   </div>
-  <div class="row">
-    <button id="btnBurstStart" class="secondary" disabled>分割撮影モード開始</button>
-    <button id="btnBurstEnd" style="display:none;">分割撮影モード終了</button>
-  </div>
-  <p class="note" id="burstHint" style="margin:4px 0 0;">通帳や長いレシートなど、複数枚まとめて1つの証憑として送りたい時だけ使ってください。</p>
   <div class="row">
     <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
   </div>
-  <div class="row">
-    <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
-  </div>
-  <div class="row">
-    <button id="btnSend" style="display:none;">送信(ドライブに保存)</button>
-  </div>
 
-  <!-- 2026-08-29変更: カメラ起動中(フルスクリーン表示中)でも撮影ボタンの下にスクロールして
-       到達できるよう、cameraCardの子要素に変更(以前は兄弟要素で、フルスクリーン中はカメラの
-       固定オーバーレイの裏に隠れて実質見えなかった)。 -->
-  <button id="filePickerToggle" type="button" class="message-box-toggle" style="display:none;">📁 スマホ内の写真・PDFを送信 ▾</button>
-  <div class="card" id="filePickerCard" style="display:none;">
-    <p class="note" style="margin-bottom:8px;">すでに撮影済みの写真や、請求書・通帳のPDFなどを選んで送信できます。ボタンを何度か押して追加していくこともできます。</p>
-    <input type="file" id="filePicker" accept="image/*,application/pdf" multiple>
-    <ul id="fileList"></ul>
+  <div id="cameraMenuPanel" class="camera-menu-panel" style="display:none;">
+    <div id="queueThumbs" class="thumb-row"></div>
+    <div id="bulkUngroupBar" class="row" style="display:none;">
+      <button id="btnBulkUngroup" class="secondary" type="button">選択した写真をグループから外す</button>
+    </div>
     <div class="row">
-      <button id="btnSendFiles" disabled>選択したファイルを送信</button>
+      <button id="btnBurstStart" class="secondary" disabled>分割撮影モード開始</button>
+      <button id="btnBurstEnd" style="display:none;">分割撮影モード終了</button>
+    </div>
+    <p class="note" id="burstHint" style="margin:4px 0 0;">通帳や長いレシートなど、複数枚まとめて1つの証憑として送りたい時だけ使ってください。</p>
+    <div class="row">
+      <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
+    </div>
+    <div class="row">
+      <button id="btnSend" style="display:none;">送信(ドライブに保存)</button>
+    </div>
+
+    <!-- 2026-08-29変更: カメラ起動中(フルスクリーン表示中)でも撮影ボタンの下にスクロールして
+         到達できるよう、cameraCardの子要素に変更(以前は兄弟要素で、フルスクリーン中はカメラの
+         固定オーバーレイの裏に隠れて実質見えなかった)。2026-08-31、メニューパネル内に移動。 -->
+    <button id="filePickerToggle" type="button" class="message-box-toggle" style="display:none;">📁 スマホ内の写真・PDFを送信 ▾</button>
+    <div class="card" id="filePickerCard" style="display:none;">
+      <p class="note" style="margin-bottom:8px;">すでに撮影済みの写真や、請求書・通帳のPDFなどを選んで送信できます。ボタンを何度か押して追加していくこともできます。</p>
+      <input type="file" id="filePicker" accept="image/*,application/pdf" multiple>
+      <ul id="fileList"></ul>
+      <div class="row">
+        <button id="btnSendFiles" disabled>選択したファイルを送信</button>
+      </div>
     </div>
   </div>
 </div>
@@ -373,8 +408,7 @@
 const GAS_URL = "https://script.google.com/macros/s/AKfycbxxRSsk49ivNhLan-pW49Q6qyU0812RIo7VC5cv_Ui4kHFkpZcqG-H3sDiOCY_WXLZj/exec";
 // ↑↑↑ ここまで ↑↑↑
 
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
+const cameraFileInput = document.getElementById('cameraFileInput'); // 2026-08-31追加(ネイティブカメラ呼び出し)
 const statusEl = document.getElementById('status');
 const greetingEl = document.getElementById('greeting');
 const messageBoxEl = document.getElementById('messageBox');
@@ -385,6 +419,8 @@ const cameraCard = document.getElementById('cameraCard');
 const btnStart = document.getElementById('btnStart');
 const btnStop = document.getElementById('btnStop');
 const btnSwitch = document.getElementById('btnSwitch');
+const btnCameraMenu = document.getElementById('btnCameraMenu'); // 2026-08-31追加
+const cameraMenuPanel = document.getElementById('cameraMenuPanel'); // 2026-08-31追加
 const btnShoot = document.getElementById('btnShoot');
 const btnRetake = document.getElementById('btnRetake');
 const btnSend = document.getElementById('btnSend');
@@ -461,7 +497,7 @@ filePickerToggle.addEventListener('click', () => {
   filePickerToggle.textContent = expanded ? '📁 スマホ内の写真・PDFを送信 ▾' : '📁 スマホ内の写真・PDFを送信 ▴';
 });
 
-let currentStream = null;
+let cameraStarted = false; // 2026-08-31変更: 映像ストリームを保持しなくなったため、単純な状態フラグに変更
 let capturedQueue = []; // { id, blob, url, groupId, groupLabel }
 let itemSeqCounter = 0;
 let selectedFiles = [];
@@ -526,7 +562,7 @@ async function loadCustomerInfo() {
         setFilePickerVisible(true);
         pendingFilesCard.style.display = '';
         renderPendingFiles(lastPendingFiles);
-        if (!currentStream) startCamera(); // 2026-08-27追加: 種別分岐が無い顧客も自動でカメラ起動
+        if (!cameraStarted) startCamera(); // 2026-08-27追加: 種別分岐が無い顧客も自動でカメラ起動
       } else if (selectedKind) {
         // 既に種類を選択済みの状態でのリロード(送信直後の再取得等)。選択はそのまま維持する。
         // 2026-08-29変更: 送信済み一覧はホーム画面専用(種別横断)になったため、
@@ -613,6 +649,7 @@ function renderKindHome() {
   // 未起動時にも「カメラを停止しました」と出てしまうため、必要な後始末だけ行う)
   if (burstActive) endBurstMode();
   stopCamera();
+  cameraStarted = false;
   exitCameraFullscreen();
   const grouped = groupKindsByMajor(customerKinds);
   kindPickerTitle.textContent = '証憑の種類を選んでください';
@@ -728,48 +765,30 @@ function exitCameraFullscreen() {
   }
 }
 
-async function startCamera() {
-  stopCamera();
-  setStatus('カメラを起動しています…');
-  try {
-    currentStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: facingMode },
-        width: { ideal: 3840 },
-        height: { ideal: 2160 }
-      },
-      audio: false
-    });
-  } catch (e) {
-    try {
-      currentStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 3840 }, height: { ideal: 2160 } },
-        audio: false
-      });
-    } catch (e2) {
-      setStatus('カメラを起動できませんでした: ' + e2.message, 'error');
-      return;
-    }
-  }
-  video.srcObject = currentStream;
+// 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): getUserMediaでライブ映像
+// ストリームを掴んでおく方式をやめたため、この関数はもう非同期の権限取得を行わない。
+// 「カメラ起動」ボタン押下(または種類選択時の自動呼び出し)は、単に撮影用のUI状態(3列ボタン+
+// 撮影ボタンのフルスクリーン表示)へ切り替えるだけになる。実際のカメラ権限要求・起動は、
+// 「撮影」を押してネイティブカメラアプリを呼び出す瞬間にOS側が行う。
+function startCamera() {
+  cameraStarted = true;
   btnShoot.disabled = false;
   btnSwitch.disabled = false;
   btnBurstStart.disabled = false;
   btnStart.style.display = 'none';
   btnStop.style.display = 'block';
   enterCameraFullscreen();
-  setStatus('カメラ起動完了。続けて何枚でも撮影できます。', 'ok');
+  setStatus('準備完了。「撮影」を押すとスマホのカメラが起動します。', 'ok');
 }
 
 function stopCamera() {
-  if (currentStream) {
-    currentStream.getTracks().forEach(t => t.stop());
-    currentStream = null;
-  }
+  // 2026-08-31変更: ページ側で保持する映像ストリームが無くなったため何もしない
+  // (呼び出し元との互換のため関数自体は残す)。
 }
 
 function stopCameraManually() {
   stopCamera();
+  cameraStarted = false;
   if (burstActive) endBurstMode();
   exitCameraFullscreen();
   btnShoot.disabled = true;
@@ -777,31 +796,35 @@ function stopCameraManually() {
   btnBurstStart.disabled = true;
   btnStart.style.display = 'block';
   btnStop.style.display = 'none';
-  setStatus('カメラを停止しました。', 'ok');
+  setStatus('カメラを終了しました。', 'ok');
 }
 
+// 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): <video>のライブ映像フレームを
+// canvasにそのまま焼き付ける方式(スマホの標準カメラアプリが実際の撮影時に通す手ブレ補正・HDR等の
+// パイプラインを一切経由しない)をやめ、<input type="file" capture>でスマホ標準のカメラアプリを
+// 直接呼び出す方式に変更した。ImageCapture API(track.takePhoto())も検討したが、iOS Safari非対応
+// のため見送り、iOS/Androidどちらでも画質改善が効くこちらを祥希さんと合意のうえ採用した。
 function shoot() {
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-  if (!w || !h) {
-    setStatus('カメラの映像がまだ準備できていません。', 'error');
-    return;
-  }
-  canvas.width = w;
-  canvas.height = h;
-  canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-  canvas.toBlob(blob => {
-    capturedQueue.push({
-      id: ++itemSeqCounter,
-      blob,
-      url: URL.createObjectURL(blob),
-      groupId: burstActive ? currentGroupId : null,
-      groupLabel: burstActive ? circledNumber(burstSeq) : null
-    });
-    renderQueue();
-    updateBurstBadge();
-    setStatus(capturedQueue.length + '枚 撮影済み。続けて撮影するか、送信してください。', 'ok');
-  }, 'image/jpeg', 0.95);
+  cameraFileInput.setAttribute('capture', facingMode === 'user' ? 'user' : 'environment');
+  cameraFileInput.click();
+}
+
+// cameraFileInputのchangeイベントから呼ばれる。ネイティブカメラをキャンセルした場合は
+// filesが空になるため何もしない(エラー扱いにはしない)。
+function handleCameraFileCapture() {
+  const file = cameraFileInput.files && cameraFileInput.files[0];
+  cameraFileInput.value = ''; // 同じファイルでも次回また change イベントが発火するようにリセット
+  if (!file) return;
+  capturedQueue.push({
+    id: ++itemSeqCounter,
+    blob: file,
+    url: URL.createObjectURL(file),
+    groupId: burstActive ? currentGroupId : null,
+    groupLabel: burstActive ? circledNumber(burstSeq) : null
+  });
+  renderQueue();
+  updateBurstBadge();
+  setStatus(capturedQueue.length + '枚 撮影済み。続けて撮影するか、送信してください。', 'ok');
 }
 
 function renderQueue() {
@@ -1066,11 +1089,18 @@ btnStop.addEventListener('click', () => {
   stopCameraManually();
   returnToPicker();
 });
+// 2026-08-31変更: ライブ映像ストリームが無くなったため、再起動は不要。次に「撮影」を
+// 押した時に使うカメラの向きを切り替えるだけ(実際の切替はネイティブカメラ側でも可能)。
 btnSwitch.addEventListener('click', () => {
   facingMode = facingMode === 'environment' ? 'user' : 'environment';
-  startCamera();
+  setStatus('次の撮影は' + (facingMode === 'environment' ? '背面' : '前面') + 'カメラを使用します。', 'ok');
+});
+// 2026-08-31追加: 撮影以外のボタン・サムネイル一覧をメニューパネルにまとめ、ここで開閉する。
+btnCameraMenu.addEventListener('click', () => {
+  cameraMenuPanel.style.display = cameraMenuPanel.style.display === 'none' ? 'block' : 'none';
 });
 btnShoot.addEventListener('click', shoot);
+cameraFileInput.addEventListener('change', handleCameraFileCapture); // 2026-08-31追加
 btnRetake.addEventListener('click', retakeLast);
 btnBurstStart.addEventListener('click', startBurstMode);
 btnBurstEnd.addEventListener('click', endBurstMode);
