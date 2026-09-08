@@ -143,6 +143,8 @@
     right: 2px;
     width: 20px;
     height: 20px;
+    min-width: 20px; /* 2026-09-09修正: 汎用buttonルールのmin-width:100pxが勝ってしまい
+                        ×ボタンが100px幅にズレて表示されていたバグを修正(祥希さんが発見) */
     line-height: 20px;
     text-align: center;
     padding: 0;
@@ -172,6 +174,12 @@
     font-size: 1.15rem;
     font-weight: 700;
     background: #d93025;
+  }
+  /* 2026-09-09追加(祥希さんの指摘: 撮影ボタンをもっと大きく): 一番使う「撮影」ボタンだけ
+     長～いレシートよりさらに大きくする */
+  #btnShoot {
+    padding: 30px 18px;
+    font-size: 1.4rem;
   }
   /* 2026-09-07追加: 「スマホ内の写真・PDFを送信」ボタン。撮影系2ボタン(赤)ほど主張しない
      水色トーンにして、3つ目の並列な追加手段であることを視覚的に落ち着かせる。 */
@@ -260,15 +268,6 @@
     padding: 8px 12px;
     border-radius: 8px;
     margin-top: 10px;
-  }
-  .thumb-check {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 18px;
-    height: 18px;
-    margin: 0;
-    z-index: 2;
   }
   .thumb-group-badge {
     position: absolute;
@@ -378,18 +377,10 @@
   }
   .header-actions button:disabled { background: #ddd; color: #999; }
   .header-actions .spacer { flex: 1; }
-  /* 2026-09-07追加: 「長～いレシート」ボタン内の3行(タイトル/アイコン/説明文)レイアウト。
-     開始・終了とも同じ見た目にするため共通クラスにする。 */
-  .btn-burst-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-  }
-  .btn-burst-title { font-size: 1.05rem; font-weight: 700; }
-  .btn-burst-icon { font-size: 1.1rem; }
-  .btn-burst-caption { font-size: 0.75rem; font-weight: 400; opacity: 0.92; }
+  /* 2026-09-09追加: 撮影直後の3択(撮り直す/次の頁/保存)。次の頁=続きを撮る・保存=このまま
+     証憑として確定、を視覚的に区別する(次の頁=待機中を示す青、保存=完了を示す緑)。 */
+  .btn-next-page { background: #1a73e8; font-weight: 700; }
+  .btn-save-shot { background: #1e8e3e; font-weight: 700; }
   /* 2026-09-07追加: メニュー画面の「未送信一覧/送信済み一覧」への導線ボタン */
   .menu-link-btn {
     display: block;
@@ -405,6 +396,21 @@
     margin-bottom: 10px;
   }
   .menu-link-btn:active { background: var(--color-accent-blue); border-color: var(--color-accent-blue-border); }
+  /* 2026-09-09追加(祥希さんの指摘: 「選択中: X > Y」という説明文をやめ、証憑選択ボタン自体に
+     現在の選択内容を表示する。メニューボタンと同じ水色にして押せる場所だと分かりやすくする) */
+  .btn-kind-select {
+    width: 100%;
+    background: var(--color-accent-blue);
+    color: var(--color-accent-blue-text);
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  /* 2026-09-09追加(祥希さんの指摘: 未送信がある時にメニューボタンへ⚠️を表示する) */
+  .menu-badge {
+    display: none;
+    margin-left: 4px;
+  }
+  .menu-badge.show { display: inline; }
 </style>
 </head>
 <body>
@@ -419,7 +425,7 @@
 <div class="header-actions">
   <button id="headerBackBtn" type="button" class="secondary" style="display:none;">← 戻る</button>
   <span class="spacer"></span>
-  <button id="headerMenuBtn" type="button">メニュー</button>
+  <button id="headerMenuBtn" type="button">メニュー<span id="menuBadge" class="menu-badge">⚠️</span></button>
 </div>
 
 <div id="greeting" class="greeting"></div>
@@ -429,13 +435,16 @@
 <!-- 2026-08-27追加: 証憑種別ごとの撮影入口分岐(タイル選択画面)。種別マスタが未設定の顧客は
      kindsが空配列で返ってくるため、このカードは常に非表示のまま(従来通りの1本道)になる -->
 <div class="card" id="kindPickerCard" style="display:none;">
-  <h2 class="card-title" id="kindPickerTitle">証憑の種類を選んでください</h2>
+  <!-- 2026-09-09変更(祥希さんの指摘: ホーム画面では「証憑の種類を選んでください」は見れば
+       分かるので不要。サブ一覧(どの大項目内かを示す見出し)では引き続き使うため、
+       要素自体は残しrenderKindHome()側でだけ空にする) -->
+  <h2 class="card-title" id="kindPickerTitle"></h2>
   <div id="kindPickerTiles" class="kind-picker-tiles"></div>
 </div>
-<div id="currentKindBar" class="current-kind-bar">
-  <span id="currentKindLabel"></span>
-  <button id="changeKindBtn" type="button" class="secondary">種類を変更</button>
-</div>
+<!-- 2026-09-09変更(祥希さんの指摘: 「選択中: X > Y」という説明文を廃止し、現在の証憑選択
+     状態そのものをボタンのラベルにする。見た目もメニューと同じ水色にして「押せる場所」だと
+     分かりやすくする) -->
+<button id="changeKindBtn" type="button" class="btn-kind-select" style="display:none;"></button>
 
 <div class="card camera-card" id="cameraCard" style="display:none;">
   <!-- 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): getUserMedia+<video>+
@@ -458,38 +467,30 @@
        前後切替ボタン(btnSwitch)・facingMode変数ごと削除。cameraFileInputのcapture属性は
        常に"environment"(背面)固定のまま(証憑撮影は背面カメラ前提のため)。 -->
   <button id="btnStart" style="display:none;">カメラ起動</button>
-  <div id="cameraPlaceholder" class="camera-placeholder">📷「撮影」を押すとカメラが起動します</div>
+  <!-- 2026-09-09変更(祥希さんの指摘: 見れば分かる説明文は不要): cameraPlaceholderの
+       案内文(📷「撮影」を押すとカメラが起動します)を削除 -->
   <input type="file" id="cameraFileInput" accept="image/*" capture="environment" style="display:none;">
   <input type="file" id="filePicker" accept="image/*,application/pdf" multiple style="display:none;">
   <div id="burstBadge" class="burst-badge" style="display:none;"></div>
 
-  <!-- 2026-09-07変更(画面刷新): 撮影画面は「撮影/長～いレシート/スマホ内選択/NAVISに送信」の
-       4ボタンだけの縦一列にする(祥希さんの指定)。未送信一覧(サムネイル)はメニュー経由の
-       別画面(#unsentListScreen)へ移設し、この画面には出さない。 -->
-  <div class="row">
+  <!-- 2026-09-09変更(祥希さんの指定): 「撮影」ボタン(入口)を1か所にし、旧「長～いレシート」
+       の開始/終了トグルは廃止。撮影の都度、下の#captureDecisionRow(撮り直す/次の頁/保存)を
+       表示し、「次の頁」が押された分だけ同じ証憑としてグループ化する。 -->
+  <div class="row" id="captureMainRow">
     <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
   </div>
-  <div class="row">
-    <button id="btnBurstStart" class="btn-shoot" disabled>
-      <span class="btn-burst-content">
-        <span class="btn-burst-title">長～いレシート</span>
-        <span class="btn-burst-icon">📷</span>
-        <span class="btn-burst-caption">2回に分けて撮影してください</span>
-      </span>
-    </button>
-    <button id="btnBurstEnd" class="btn-shoot" style="display:none;">
-      <span class="btn-burst-content">
-        <span class="btn-burst-title">送信の準備ができました</span>
-        <span class="btn-burst-icon">📷</span>
-        <span class="btn-burst-caption">押すと送信できるようになります</span>
-      </span>
-    </button>
-  </div>
-  <div class="row">
+  <div class="row" id="captureMainRow2">
     <button id="filePickerToggle" type="button" class="btn-file-picker">スマホ内の写真・PDFを送信</button>
   </div>
-  <div class="row">
+  <div class="row" id="captureMainRow3">
     <button id="btnSend" style="display:none;">NAVISに送信</button>
+  </div>
+
+  <!-- 2026-09-09新設: 撮影直後だけ表示する3択(撮り直す/次の頁/保存)。 -->
+  <div class="row" id="captureDecisionRow" style="display:none;">
+    <button id="btnRetakeShot" type="button" class="secondary">撮り直す</button>
+    <button id="btnNextPage" type="button" class="btn-next-page">次の頁</button>
+    <button id="btnSaveShot" type="button" class="btn-save-shot">保存</button>
   </div>
 </div>
 
@@ -504,9 +505,6 @@
 <div class="card" id="unsentListScreen" style="display:none;">
   <h2 class="card-title">未送信一覧</h2>
   <div id="queueThumbs" class="thumb-row"></div>
-  <div id="bulkUngroupBar" class="row" style="display:none;">
-    <button id="btnBulkUngroup" class="secondary" type="button">選択した写真をグループから外す</button>
-  </div>
   <div class="row">
     <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
   </div>
@@ -553,11 +551,15 @@ const btnStart = document.getElementById('btnStart');
 const btnShoot = document.getElementById('btnShoot');
 const btnRetake = document.getElementById('btnRetake');
 const btnSend = document.getElementById('btnSend');
-const btnBurstStart = document.getElementById('btnBurstStart');
-const btnBurstEnd = document.getElementById('btnBurstEnd');
 const burstBadge = document.getElementById('burstBadge');
-const bulkUngroupBar = document.getElementById('bulkUngroupBar');
-const btnBulkUngroup = document.getElementById('btnBulkUngroup');
+// 2026-09-09追加: 撮影直後の3択(撮り直す/次の頁/保存)まわりの要素
+const captureMainRow = document.getElementById('captureMainRow');
+const captureMainRow2 = document.getElementById('captureMainRow2');
+const captureMainRow3 = document.getElementById('captureMainRow3');
+const captureDecisionRow = document.getElementById('captureDecisionRow');
+const btnRetakeShot = document.getElementById('btnRetakeShot');
+const btnNextPage = document.getElementById('btnNextPage');
+const btnSaveShot = document.getElementById('btnSaveShot');
 
 const filePicker = document.getElementById('filePicker');
 
@@ -569,16 +571,15 @@ const filePickerToggle = document.getElementById('filePickerToggle'); // 2026-08
 const kindPickerCard = document.getElementById('kindPickerCard');
 const kindPickerTitle = document.getElementById('kindPickerTitle');
 const kindPickerTiles = document.getElementById('kindPickerTiles');
-const currentKindBar = document.getElementById('currentKindBar');
 // 2026-09-07追加(画面刷新): 共通ヘッダー直下の戻る/メニュー、新設のメニュー系画面
 const headerBackBtn = document.getElementById('headerBackBtn');
 const headerMenuBtn = document.getElementById('headerMenuBtn');
+const menuBadge = document.getElementById('menuBadge'); // 2026-09-09追加: 未送信がある時の⚠️表示
 const menuScreen = document.getElementById('menuScreen');
 const menuOpenUnsentBtn = document.getElementById('menuOpenUnsentBtn');
 const menuOpenSentBtn = document.getElementById('menuOpenSentBtn');
 const unsentListScreen = document.getElementById('unsentListScreen');
 const sentListScreen = document.getElementById('sentListScreen');
-const currentKindLabel = document.getElementById('currentKindLabel');
 const changeKindBtn = document.getElementById('changeKindBtn');
 
 const MAJOR_CATEGORIES = [
@@ -669,11 +670,13 @@ let sending = false;
 let capturedQueue = []; // { id, blob, url, source, groupId, groupLabel }
 let itemSeqCounter = 0;
 
-// 分割撮影モード(複数枚を1つの証憑としてグルーピングする機能)の状態
-let burstActive = false;
-let burstSeq = 0;          // モードを開始した回数。そのままグループIDとして使う
-let currentGroupId = null;
-let selectedItemIds = new Set(); // グループから外す対象として選択中の撮影データのid
+// 2026-09-09変更(祥希さんの指定): 「長～いレシート」の開始/終了トグルを廃止し、撮影の都度
+// 「撮り直す/次の頁/保存」を選ばせる方式にした。次の頁が1回でも押されると、その一連の撮影が
+// 複数ページの1証憑としてグルーピングされる(groupSeqCounterは複数ページ証憑の通し番号)。
+let groupSeqCounter = 0;
+let activeGroupId = null;    // 進行中のグループのgroupId(次の頁が1回も押されていなければnull)
+let lastShotItemId = null;   // 直前に撮影した1枚のid(撮り直す/次の頁の対象、null=決定待ちでない)
+let pendingAction = null;    // 'retake' | 'nextPage' | null(次に撮る1枚をどう扱うか)
 
 function circledNumber(n) {
   if (n >= 1 && n <= 20) return String.fromCodePoint(0x2460 + (n - 1));
@@ -723,7 +726,7 @@ async function loadCustomerInfo() {
       // 2026-08-27追加: 証憑種別が1件も設定されていない顧客は、従来通りタイル選択なしの1本道
       if (customerKinds.length === 0) {
         kindPickerCard.style.display = 'none';
-        currentKindBar.style.display = 'none';
+        changeKindBtn.style.display = 'none';
         cameraCard.style.display = '';
         headerBackBtn.style.display = 'none'; // 種別分岐が無い1本道の顧客なので戻る先が無い
         if (!cameraStarted) startCamera(); // 2026-08-27追加: 種別分岐が無い顧客も自動でカメラ起動
@@ -747,7 +750,7 @@ async function loadCustomerInfo() {
 // 従来通りタイル選択なしでカメラ・ファイル送信カードを表示する
 function showCardsFallback() {
   kindPickerCard.style.display = 'none';
-  currentKindBar.style.display = 'none';
+  changeKindBtn.style.display = 'none';
   cameraCard.style.display = '';
   headerBackBtn.style.display = 'none'; // 種別分岐が無い1本道の顧客なので戻る先が無い
 }
@@ -810,11 +813,11 @@ function renderKindHome() {
   selectedKind = null;
   // 2026-08-27追加: タイル選択に戻る時はカメラを解放しておく(stopCameraManuallyだと
   // 未起動時にも「カメラを停止しました」と出てしまうため、必要な後始末だけ行う)
-  if (burstActive) endBurstMode();
+  resetCaptureFlow();
   stopCamera();
   cameraStarted = false;
   const grouped = groupKindsByMajor(customerKinds);
-  kindPickerTitle.textContent = '証憑の種類を選んでください';
+  kindPickerTitle.textContent = ''; // 2026-09-09変更: ホーム画面では見出し文を出さない(祥希さんの指摘)
   kindPickerTiles.innerHTML = '';
   MAJOR_CATEGORIES.forEach(major => {
     const list = grouped[major];
@@ -853,7 +856,7 @@ function renderKindHome() {
     kindPickerTiles.appendChild(tile);
   });
   kindPickerCard.style.display = '';
-  currentKindBar.style.display = 'none';
+  changeKindBtn.style.display = 'none';
   cameraCard.style.display = 'none';
   headerBackBtn.style.display = 'none'; // 真のホームなので戻る先が無い
   // 2026-09-07変更(画面刷新): 送信済み一覧はホーム画面に常時表示せず、メニュー経由の
@@ -877,8 +880,8 @@ function renderKindSubList(major, list) {
 function selectKind(k) {
   selectedKind = k;
   kindPickerCard.style.display = 'none';
-  currentKindBar.style.display = 'flex';
-  currentKindLabel.textContent = '選択中: ' + majorLabel(k.majorCategory) + ' > ' + k.displayName;
+  changeKindBtn.style.display = '';
+  changeKindBtn.textContent = majorLabel(k.majorCategory) + ' > ' + k.displayName;
   cameraCard.style.display = '';
   headerBackBtn.style.display = '';
   // 2026-09-07変更: 送信済み一覧はメニュー経由の#sentListScreenでのみ表示する。
@@ -892,7 +895,7 @@ function returnToPicker() {
   selectedKind = null; // カメラ画面から離れるため、選択中の種類はいったんクリアする
   const grouped = groupKindsByMajor(customerKinds);
   const list = lastMajorCategory ? grouped[lastMajorCategory] : null;
-  currentKindBar.style.display = 'none';
+  changeKindBtn.style.display = 'none';
   cameraCard.style.display = 'none';
   if (list && list.length > 1) {
     kindPickerCard.style.display = '';
@@ -910,7 +913,7 @@ let screenBeforeMenu = 'home'; // メニューを開く直前に居た画面('ho
 function openMenu() {
   screenBeforeMenu = cameraCard.style.display !== 'none' ? 'camera' : 'home';
   kindPickerCard.style.display = 'none';
-  currentKindBar.style.display = 'none';
+  changeKindBtn.style.display = 'none';
   cameraCard.style.display = 'none';
   menuScreen.style.display = '';
   headerBackBtn.style.display = '';
@@ -919,7 +922,7 @@ function closeMenu() {
   menuScreen.style.display = 'none';
   if (screenBeforeMenu === 'camera') {
     cameraCard.style.display = '';
-    if (selectedKind) currentKindBar.style.display = 'flex';
+    if (selectedKind) changeKindBtn.style.display = '';
     headerBackBtn.style.display = '';
   } else {
     renderKindHome(); // サブ一覧を見ていた場合も含め、常にホームへ戻す(単純化)
@@ -934,7 +937,7 @@ function showMenuFromSub() {
 // 隠している前提だが、念のためここでも明示的に隠しておく(呼び出し順に依存しない安全策)。
 function hideMainScreens() {
   kindPickerCard.style.display = 'none';
-  currentKindBar.style.display = 'none';
+  changeKindBtn.style.display = 'none';
   cameraCard.style.display = 'none';
 }
 function openUnsentList() {
@@ -970,7 +973,7 @@ const appTitleLogo = document.querySelector('.app-title');
 if (appTitleLogo) {
   appTitleLogo.style.cursor = 'pointer';
   appTitleLogo.addEventListener('click', () => {
-    if (burstActive) endBurstMode();
+    resetCaptureFlow();
     renderKindHome();
   });
 }
@@ -1002,7 +1005,6 @@ async function deletePendingFile(fileId, wrapEl) {
 function startCamera() {
   cameraStarted = true;
   btnShoot.disabled = false;
-  btnBurstStart.disabled = false;
   btnStart.style.display = 'none';
   setStatus('準備完了。「撮影」を押すとスマホのカメラが起動します。', 'ok');
 }
@@ -1015,9 +1017,8 @@ function stopCamera() {
 function stopCameraManually() {
   stopCamera();
   cameraStarted = false;
-  if (burstActive) endBurstMode();
+  resetCaptureFlow();
   btnShoot.disabled = true;
-  btnBurstStart.disabled = true;
   btnStart.style.display = 'block';
   setStatus('前の画面に戻ります。', 'ok');
 }
@@ -1031,26 +1032,108 @@ function stopCameraManually() {
 // capture属性の動的切替(facingMode)は廃止し、HTML側の固定値("environment"、証憑撮影は
 // 背面カメラ前提)のままclick()するだけにした。
 function shoot() {
+  pendingAction = null; // 通常の新規撮影(グループ外の1枚目)
   cameraFileInput.click();
 }
 
+// 2026-09-09追加: 撮影直後の3択のうち「撮り直す」。直前の1枚を、新しく撮った1枚と
+// 差し替える(グループに属していた場合はそのページ番号のまま差し替える)。
+function retakeShot() {
+  pendingAction = 'retake';
+  cameraFileInput.click();
+}
+
+// 2026-09-09追加: 撮影直後の3択のうち「次の頁」。1回目に押された時点でグループを新設し、
+// 直前の1枚(1ページ目)にも遡ってグループを付与する。2回目以降は同じグループに追加していく。
+function nextPageShot() {
+  pendingAction = 'nextPage';
+  if (!activeGroupId) {
+    activeGroupId = String(++groupSeqCounter);
+    const firstItem = capturedQueue.find(it => it.id === lastShotItemId);
+    if (firstItem) {
+      firstItem.groupId = activeGroupId;
+      firstItem.groupLabel = circledNumber(1);
+      renderQueue();
+    }
+  }
+  cameraFileInput.click();
+}
+
+// 2026-09-09追加: 撮影直後の3択のうち「保存」。ここまでの撮影(1枚、または次の頁でまとめた
+// 複数ページ)を確定し、通常の画面(撮影/スマホ内選択/NAVISに送信)に戻る。
+function saveShot() {
+  activeGroupId = null;
+  lastShotItemId = null;
+  pendingAction = null;
+  showCaptureMainRow();
+  renderQueue(); // 2026-09-09修正: lastShotItemIdをクリアした後でNAVISに送信ボタンを再評価する
+  updateBurstBadge();
+  setStatus(capturedQueue.length + '枚 撮影済み。続けて撮影するか、送信してください。', 'ok');
+}
+
+function showCaptureDecisionRow() {
+  captureMainRow.style.display = 'none';
+  captureMainRow2.style.display = 'none';
+  captureMainRow3.style.display = 'none';
+  captureDecisionRow.style.display = 'flex';
+}
+
+function showCaptureMainRow() {
+  captureDecisionRow.style.display = 'none';
+  captureMainRow.style.display = '';
+  captureMainRow2.style.display = '';
+  captureMainRow3.style.display = '';
+}
+
+// 2026-09-09追加: 画面遷移時(ホームに戻る・カメラを離れる等)に撮影直後の3択状態を
+// リセットする(旧endBurstMode相当)。
+function resetCaptureFlow() {
+  activeGroupId = null;
+  lastShotItemId = null;
+  pendingAction = null;
+  showCaptureMainRow();
+  updateBurstBadge();
+}
+
 // cameraFileInputのchangeイベントから呼ばれる。ネイティブカメラをキャンセルした場合は
-// filesが空になるため何もしない(エラー扱いにはしない)。
+// filesが空になるため、決定待ちの状態ならその3択表示に戻すだけで何もしない
+// (エラー扱いにはしない、pendingActionで進めかけていた操作も無かったことにする)。
 function handleCameraFileCapture() {
   const file = cameraFileInput.files && cameraFileInput.files[0];
   cameraFileInput.value = ''; // 同じファイルでも次回また change イベントが発火するようにリセット
-  if (!file) return;
-  capturedQueue.push({
-    id: ++itemSeqCounter,
-    blob: file,
-    url: URL.createObjectURL(file),
-    source: 'camera',
-    groupId: burstActive ? currentGroupId : null,
-    groupLabel: burstActive ? circledNumber(burstSeq) : null
-  });
+  if (!file) {
+    if (lastShotItemId) showCaptureDecisionRow();
+    return;
+  }
+
+  if (pendingAction === 'retake' && lastShotItemId) {
+    const idx = capturedQueue.findIndex(it => it.id === lastShotItemId);
+    let groupId = null, groupLabel = null;
+    if (idx !== -1) {
+      groupId = capturedQueue[idx].groupId;
+      groupLabel = capturedQueue[idx].groupLabel;
+      capturedQueue.splice(idx, 1);
+    }
+    const item = { id: ++itemSeqCounter, blob: file, url: URL.createObjectURL(file), source: 'camera', groupId, groupLabel };
+    capturedQueue.push(item);
+    lastShotItemId = item.id;
+  } else if (pendingAction === 'nextPage') {
+    const pageNum = capturedQueue.filter(it => it.groupId === activeGroupId).length + 1;
+    const item = {
+      id: ++itemSeqCounter, blob: file, url: URL.createObjectURL(file), source: 'camera',
+      groupId: activeGroupId, groupLabel: circledNumber(pageNum)
+    };
+    capturedQueue.push(item);
+    lastShotItemId = item.id;
+  } else {
+    const item = { id: ++itemSeqCounter, blob: file, url: URL.createObjectURL(file), source: 'camera', groupId: null, groupLabel: null };
+    capturedQueue.push(item);
+    lastShotItemId = item.id;
+  }
+  pendingAction = null;
   renderQueue();
   updateBurstBadge();
-  setStatus(capturedQueue.length + '枚 撮影済み。続けて撮影するか、送信してください。', 'ok');
+  showCaptureDecisionRow();
 }
 
 // 2026-09-07追加(画面刷新): 「スマホ内の写真・PDFを送信」もカメラ撮影と同じキュー
@@ -1078,17 +1161,8 @@ function renderQueue() {
     const wrap = document.createElement('div');
     wrap.className = 'thumb';
 
-    const check = document.createElement('input');
-    check.type = 'checkbox';
-    check.className = 'thumb-check';
-    check.title = '複数選択してまとめてグループから外す';
-    check.checked = selectedItemIds.has(item.id);
-    check.addEventListener('change', () => {
-      if (check.checked) selectedItemIds.add(item.id);
-      else selectedItemIds.delete(item.id);
-      updateBulkUngroupBar();
-    });
-    wrap.appendChild(check);
+    // 2026-09-09変更(祥希さんの指摘: チェックボックスでの複数選択・一括グループ解除は不要):
+    // グループから外す操作は下の丸バッジ(1枚ずつタップ)だけに一本化した。
 
     // 2026-09-07追加: ファイル選択で追加されたPDFは<img>で描画できないため、
     // ファイル名を表示するだけのプレースホルダーにする(サムネイル代わり)。
@@ -1120,7 +1194,6 @@ function renderQueue() {
     del.textContent = '×';
     del.addEventListener('click', () => {
       capturedQueue.splice(i, 1);
-      selectedItemIds.delete(item.id);
       renderQueue();
       updateBurstBadge();
     });
@@ -1129,26 +1202,20 @@ function renderQueue() {
     queueThumbs.appendChild(wrap);
   });
   const hasItems = capturedQueue.length > 0;
+  // 2026-09-09追加(祥希さんの指摘): 未送信がある間、メニューボタンに⚠️を出す
+  menuBadge.classList.toggle('show', hasItems);
   // 分割撮影モード中は送信ボタンを隠す(自動送信はしない。モード終了で再表示されるだけ)
-  btnSend.style.display = (hasItems && !burstActive) ? 'block' : 'none';
+  btnSend.style.display = (hasItems && !lastShotItemId) ? 'block' : 'none';
   // 2026-08-31修正: sendingを見ずに!hasItemsだけで有効/無効を決めていたため、送信中に
   // renderQueue()が呼ばれる(撮影・削除等)と送信ボタンが再度有効になり、二重送信を招いていた。
   btnSend.disabled = !hasItems || sending;
   btnRetake.style.display = hasItems ? 'block' : 'none';
-  updateBulkUngroupBar();
 }
 
 function retakeLast() {
-  const removed = capturedQueue.pop();
-  if (removed) selectedItemIds.delete(removed.id);
+  capturedQueue.pop();
   renderQueue();
   updateBurstBadge();
-}
-
-function updateBulkUngroupBar() {
-  const n = selectedItemIds.size;
-  bulkUngroupBar.style.display = n > 0 ? 'block' : 'none';
-  btnBulkUngroup.textContent = '選択した' + n + '枚をグループから外す';
 }
 
 function ungroupItems(ids) {
@@ -1159,36 +1226,16 @@ function ungroupItems(ids) {
       item.groupLabel = null;
     }
   });
-  ids.forEach(id => selectedItemIds.delete(id));
   renderQueue();
   updateBurstBadge();
 }
 
-function startBurstMode() {
-  burstActive = true;
-  burstSeq += 1;
-  currentGroupId = String(burstSeq);
-  btnBurstStart.style.display = 'none';
-  btnBurstEnd.style.display = 'block';
-  updateBurstBadge();
-  renderQueue();
-  setStatus('続けて同じ証憑のページを撮影してください。', 'ok'); // 2026-09-07変更(画面刷新)
-}
-
-function endBurstMode() {
-  burstActive = false;
-  currentGroupId = null;
-  btnBurstStart.style.display = 'block';
-  btnBurstEnd.style.display = 'none';
-  burstBadge.style.display = 'none';
-  renderQueue();
-  setStatus('内容を確認してから送信してください。', 'ok'); // 2026-09-07変更(画面刷新)
-}
-
+// 2026-09-09変更(祥希さんの指定で開始/終了トグルを廃止): 進行中のグループのページ数だけ
+// 表示する(グループが無ければ何も表示しない)。
 function updateBurstBadge() {
-  if (!burstActive) { burstBadge.style.display = 'none'; return; }
-  const count = capturedQueue.filter(item => item.groupId === currentGroupId).length;
-  burstBadge.textContent = '長～いレシート撮影中(' + count + '枚)'; // 2026-09-07変更(画面刷新)
+  if (!activeGroupId) { burstBadge.style.display = 'none'; return; }
+  const count = capturedQueue.filter(item => item.groupId === activeGroupId).length;
+  burstBadge.textContent = 'この証憑を' + count + 'ページ撮影済み';
   burstBadge.style.display = 'block';
 }
 
@@ -1275,11 +1322,10 @@ async function sendQueue() {
   // capturedQueueから「送信開始時点のスナップショット」ではなく生配列から直接計算していたため、
   // 送信中に新しい写真が追加される(下のfor文はcapturedQueue.lengthを毎回見るので、追加された
   // 写真も同じ送信ループに巻き込まれてしまう)と、その写真の分だけgroupTotalsに反映されておらず
-  // undefinedになっていた。btnShoot/btnBurstStartを送信中は無効化して新規追加自体を防ぐのに加え、
+  // undefinedになっていた。btnShootを送信中は無効化して新規追加自体を防ぐのに加え、
   // 万一何らかの経路で追加されても影響を受けないよう、送信対象を送信開始時点の配列コピー
   // (itemsToSend)に固定し、以降は生きたcapturedQueueを一切参照しないようにする。
   btnShoot.disabled = true;
-  btnBurstStart.disabled = true;
   const itemsToSend = capturedQueue.slice();
   const total = itemsToSend.length;
   const results = new Array(total);
@@ -1371,8 +1417,6 @@ async function sendQueue() {
   // capturedQueueとitemsToSendの並びがズレても正しく取り除けるようにするため)。
   const sentIds = new Set(itemsToSend.filter((item, i) => results[i]).map(it => it.id));
   capturedQueue = capturedQueue.filter(item => !sentIds.has(item.id));
-  const remainingIds = new Set(capturedQueue.map(it => it.id));
-  Array.from(selectedItemIds).forEach(id => { if (!remainingIds.has(id)) selectedItemIds.delete(id); });
   // 2026-08-31追加: renderQueue()より前にsending=falseへ戻す(renderQueue()内のbtnSend.disabled
   // 判定がsendingを見るため、先に戻しておかないと送信完了後もボタンが無効のままになってしまう)。
   sending = false;
@@ -1380,7 +1424,6 @@ async function sendQueue() {
   // 再度有効化する(未起動のまま送信だけした場合はcameraStartedがfalseなので無効のまま維持)。
   if (cameraStarted) {
     btnShoot.disabled = false;
-    btnBurstStart.disabled = false;
   }
   hideSendingOverlay();
   renderQueue();
@@ -1402,9 +1445,9 @@ async function sendQueue() {
 btnShoot.addEventListener('click', shoot);
 cameraFileInput.addEventListener('change', handleCameraFileCapture); // 2026-08-31追加
 btnRetake.addEventListener('click', retakeLast);
-btnBurstStart.addEventListener('click', startBurstMode);
-btnBurstEnd.addEventListener('click', endBurstMode);
-btnBulkUngroup.addEventListener('click', () => ungroupItems(Array.from(selectedItemIds)));
+btnRetakeShot.addEventListener('click', retakeShot); // 2026-09-09追加
+btnNextPage.addEventListener('click', nextPageShot); // 2026-09-09追加
+btnSaveShot.addEventListener('click', saveShot);     // 2026-09-09追加
 btnSend.addEventListener('click', sendQueue);
 
 window.addEventListener('beforeunload', stopCamera);
