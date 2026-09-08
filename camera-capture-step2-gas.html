@@ -100,10 +100,12 @@
     gap: 8px;
     margin-top: 12px;
   }
+  /* 2026-09-09変更(祥希さんの指摘: 未送信一覧が小さくて見にくい、一行3枚くらいの大きさで
+     良いのでもう少し大きく): 72px→110pxに拡大。 */
   .thumb {
     position: relative;
-    width: 72px;
-    height: 72px;
+    width: 110px;
+    height: 110px;
     border-radius: 6px;
     overflow: hidden;
     background: #000;
@@ -113,18 +115,18 @@
   .thumb-file-placeholder {
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
-    background: #eee; color: #444; font-size: 0.7rem;
-    text-align: center; overflow: hidden; word-break: break-all; padding: 2px;
+    background: #eee; color: #444; font-size: 0.8rem;
+    text-align: center; overflow: hidden; word-break: break-all; padding: 4px;
   }
   /* 2026-08-29追加: ホーム画面の送信済み一覧(種別横断)で、各サムネイルの下に種別名を
      表示するための専用ラッパー。既存の.thumb自体(burst撮影キュー等でも共用)は変更しない。 */
-  .pending-item { display: flex; flex-direction: column; align-items: center; width: 72px; }
+  .pending-item { display: flex; flex-direction: column; align-items: center; width: 110px; }
   .pending-item-label {
     margin-top: 2px;
     font-size: 10px;
     color: #666;
     text-align: center;
-    max-width: 72px;
+    max-width: 110px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -170,7 +172,7 @@
   /* 2026-09-09追加(祥希さんの指摘: 撮影ボタンをもっと大きく): 一番使う「撮影」ボタンだけ
      長～いレシートよりさらに大きくする */
   #btnShoot {
-    padding: 30px 18px;
+    padding: 44px 18px; /* 2026-09-09変更(祥希さんの指摘: さらに縦長に) */
     font-size: 1.4rem;
   }
   /* 2026-09-07追加: 「スマホ内の写真・PDFを送信」ボタン。撮影系2ボタン(赤)ほど主張しない
@@ -180,9 +182,9 @@
     color: var(--color-accent-blue-text);
     font-weight: 600;
   }
-  /* 2026-09-09追加(祥希さんの指定): 「撮影→NAVISに送信」の組と「スマホ内選択→NAVISに送信」の
-     組を視覚的に分ける、少しの余白。 */
-  .capture-group-gap { margin-top: 22px; }
+  /* 2026-09-09削除: .capture-group-gapは「撮影→送信」「スマホ内選択→送信」を1つの.card内で
+     margin-topだけ分けていた時の暫定処置。祥希さんの指摘で2つの.cardに分割したことで
+     .cardの既定margin-bottomが自然に余白を作るようになったため不要になった。 */
   #status {
     font-size: 0.85rem;
     white-space: pre-wrap;
@@ -208,16 +210,19 @@
     max-height: 90%;
     border-radius: 8px;
   }
+  /* 2026-09-09変更(祥希さんの指摘: スマホで見ると位置がずれて見にくい、メニュー等と同じ
+     角丸めた四角+水色に統一): 白い円形ボタンをやめ、他の押せるボタンと同じ見た目にする。 */
   .modal-close {
     position: absolute;
     top: 16px;
     right: 16px;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.9);
-    color: #222;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--color-accent-blue);
+    color: var(--color-accent-blue-text);
     font-size: 1.2rem;
+    font-weight: 600;
     border: none;
   }
   /* 2026-08-31追加(祥希さんの指摘: 送信中はPoNavisLogのように画面をロックしたい)。
@@ -416,7 +421,7 @@
   <div id="kindPickerTiles" class="kind-picker-tiles"></div>
 </div>
 
-<div class="card camera-card" id="cameraCard" style="display:none;">
+<div id="cameraCard" style="display:none;">
   <!-- 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): getUserMedia+<video>+
        canvasでライブ映像のフレームをそのまま静止画化する方式をやめ、隠しファイル入力
        (accept="image/*" capture)でスマホ標準のカメラアプリを直接呼び出す方式に変更した。
@@ -441,32 +446,39 @@
        案内文(📷「撮影」を押すとカメラが起動します)を削除 -->
   <input type="file" id="cameraFileInput" accept="image/*" capture="environment" style="display:none;">
   <input type="file" id="filePicker" accept="image/*,application/pdf" multiple style="display:none;">
-  <div id="burstBadge" class="burst-badge" style="display:none;"></div>
 
-  <!-- 2026-09-09変更(祥希さんの指定): 「撮影」ボタン(入口)を1か所にし、旧「長～いレシート」
-       の開始/終了トグルは廃止。撮影の都度、下の#captureDecisionRow(撮り直す/次の頁/保存)を
-       表示し、「次の頁」が押された分だけ同じ証憑としてグループ化する。
-       2026-09-09(続き)変更(祥希さんの指定): 「撮影→NAVISに送信」「スマホ内選択→NAVISに送信」の
-       2組に並べ替え(送信ボタンをそれぞれの直後に置く)。両方の送信ボタンは同じsendQueue()を
-       呼ぶ(キューは共通)。未送信がある間は⚠️を表示し、メニューボタンの警告と揃える。 -->
-  <div class="row" id="captureMainRow">
-    <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
-  </div>
-  <div class="row" id="captureMainRow3">
-    <button id="btnSend" style="display:none;">NAVISに送信 ⚠️</button>
-  </div>
-  <div class="row capture-group-gap" id="captureMainRow2">
-    <button id="filePickerToggle" type="button" class="btn-file-picker">スマホ内の写真・PDFを選択して送信</button>
-  </div>
-  <div class="row" id="captureMainRow4">
-    <button id="btnSend2" style="display:none;">NAVISに送信 ⚠️</button>
+  <!-- 2026-09-09変更(祥希さんの指摘: 撮影側とスマホ内選択側は白枠(カード)自体を分けよう):
+       元は1つの.cardに4行まとめていたが、2つの.cardに分割した。 -->
+  <div class="card" id="captureCardShoot">
+    <div id="burstBadge" class="burst-badge" style="display:none;"></div>
+    <!-- 2026-09-09変更(祥希さんの指定): 「撮影」ボタン(入口)を1か所にし、旧「長～いレシート」
+         の開始/終了トグルは廃止。撮影の都度、下の#captureDecisionRow(撮り直す/次の頁/保存)を
+         表示し、「次の頁」が押された分だけ同じ証憑としてグループ化する。 -->
+    <div class="row" id="captureMainRow">
+      <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
+    </div>
+    <!-- 2026-09-09(続き)変更(祥希さんの指摘: 未送信が無くてもNAVISに送信ボタンは最初から
+         設置し、押せない状態(disabled)にしておく。ボタンが後から現れる・消えるという
+         「アクションで表示が変わる」設計をやめ、常に同じ場所に同じボタンがある状態にする)。
+         ⚠️は未送信がある時だけ.menu-badge.showで表示(ボタン自体は常時表示のまま)。 -->
+    <div class="row" id="captureMainRow3">
+      <button id="btnSend" disabled>NAVISに送信<span id="sendBadge" class="menu-badge">⚠️</span></button>
+    </div>
+    <!-- 2026-09-09新設: 撮影直後だけ表示する3択(撮り直す/次の頁/保存)。 -->
+    <div class="row" id="captureDecisionRow" style="display:none;">
+      <button id="btnRetakeShot" type="button" class="secondary">撮り直す</button>
+      <button id="btnNextPage" type="button" class="btn-next-page">次の頁</button>
+      <button id="btnSaveShot" type="button" class="btn-save-shot">保存</button>
+    </div>
   </div>
 
-  <!-- 2026-09-09新設: 撮影直後だけ表示する3択(撮り直す/次の頁/保存)。 -->
-  <div class="row" id="captureDecisionRow" style="display:none;">
-    <button id="btnRetakeShot" type="button" class="secondary">撮り直す</button>
-    <button id="btnNextPage" type="button" class="btn-next-page">次の頁</button>
-    <button id="btnSaveShot" type="button" class="btn-save-shot">保存</button>
+  <div class="card" id="captureCardFilePicker">
+    <div class="row" id="captureMainRow2">
+      <button id="filePickerToggle" type="button" class="btn-file-picker">スマホ内の写真・PDFを選択して送信</button>
+    </div>
+    <div class="row" id="captureMainRow4">
+      <button id="btnSend2" disabled>NAVISに送信<span id="sendBadge2" class="menu-badge">⚠️</span></button>
+    </div>
   </div>
 </div>
 
@@ -474,19 +486,17 @@
      (常時表示すると情報量が多くなるため、祥希さんの指定で分離)。 -->
 <div class="card" id="menuScreen" style="display:none;">
   <h2 class="card-title">メニュー</h2>
-  <button id="menuOpenUnsentBtn" type="button" class="menu-link-btn">未送信一覧を見る</button>
+  <!-- 2026-09-09追加(祥希さんの指摘: メニューの警告マークが良かったので、こちらにも表示) -->
+  <button id="menuOpenUnsentBtn" type="button" class="menu-link-btn">未送信一覧を見る<span id="unsentMenuBadge" class="menu-badge">⚠️</span></button>
   <button id="menuOpenSentBtn" type="button" class="menu-link-btn">送信済み一覧を見る</button>
 </div>
 
 <div class="card" id="unsentListScreen" style="display:none;">
   <h2 class="card-title">未送信一覧</h2>
   <div id="queueThumbs" class="thumb-row"></div>
+  <!-- 2026-09-09変更(祥希さんの指摘: 「直前の1枚を削除」は不要なので廃止) -->
   <div class="row">
-    <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
-  </div>
-  <!-- 2026-09-09追加(祥希さんの指摘: この画面に送信ボタンが無く、見るだけの画面になっていた) -->
-  <div class="row">
-    <button id="btnSend3" style="display:none;">NAVISに送信 ⚠️</button>
+    <button id="btnSend3" disabled>NAVISに送信<span id="sendBadge3" class="menu-badge">⚠️</span></button>
   </div>
 </div>
 
@@ -529,19 +539,26 @@ const queueThumbs = document.getElementById('queueThumbs');
 const cameraCard = document.getElementById('cameraCard');
 const btnStart = document.getElementById('btnStart');
 const btnShoot = document.getElementById('btnShoot');
-const btnRetake = document.getElementById('btnRetake');
 // 2026-09-09追加(祥希さんの指定): 「NAVISに送信」を撮影直後・スマホ内選択直後・未送信一覧の
 // 3箇所に置く(見た目上は3個のボタンだが、すべて同じsendQueue()を呼ぶ)。
+// 2026-09-09(続き)変更(祥希さんの指摘: 未送信が無くてもボタン自体は最初から設置し、
+// 押せない状態(disabled)にしておく。表示/非表示の切替ではなく有効/無効の切替に統一): 各ボタンに
+// 対の警告バッジ(⚠️、未送信がある時だけ.showクラスで表示)を追加。
 const btnSend = document.getElementById('btnSend');
 const btnSend2 = document.getElementById('btnSend2');
 const btnSend3 = document.getElementById('btnSend3');
 const sendButtons = [btnSend, btnSend2, btnSend3];
+const sendBadges = [
+  document.getElementById('sendBadge'),
+  document.getElementById('sendBadge2'),
+  document.getElementById('sendBadge3'),
+];
+const unsentMenuBadge = document.getElementById('unsentMenuBadge'); // 2026-09-09追加
 const burstBadge = document.getElementById('burstBadge');
 // 2026-09-09追加: 撮影直後の3択(撮り直す/次の頁/保存)まわりの要素
+const captureCardFilePicker = document.getElementById('captureCardFilePicker'); // 2026-09-09追加(白枠分割)
 const captureMainRow = document.getElementById('captureMainRow');
-const captureMainRow2 = document.getElementById('captureMainRow2');
 const captureMainRow3 = document.getElementById('captureMainRow3');
-const captureMainRow4 = document.getElementById('captureMainRow4');
 const captureDecisionRow = document.getElementById('captureDecisionRow');
 const btnRetakeShot = document.getElementById('btnRetakeShot');
 const btnNextPage = document.getElementById('btnNextPage');
@@ -1043,18 +1060,18 @@ function saveShot() {
 
 function showCaptureDecisionRow() {
   captureMainRow.style.display = 'none';
-  captureMainRow2.style.display = 'none';
   captureMainRow3.style.display = 'none';
-  captureMainRow4.style.display = 'none';
+  // 2026-09-09変更(白枠分割に伴い): スマホ内選択のカード自体を丸ごと隠す(中身が空の
+  // 白い箱が残らないようにするため。カード内のrowを個別に隠す処理は不要になった)。
+  captureCardFilePicker.style.display = 'none';
   captureDecisionRow.style.display = 'flex';
 }
 
 function showCaptureMainRow() {
   captureDecisionRow.style.display = 'none';
   captureMainRow.style.display = '';
-  captureMainRow2.style.display = '';
   captureMainRow3.style.display = '';
-  captureMainRow4.style.display = '';
+  captureCardFilePicker.style.display = '';
 }
 
 // 2026-09-09追加: 画面遷移時(ホームに戻る・カメラを離れる等)に撮影直後の3択状態を
@@ -1173,24 +1190,19 @@ function renderQueue() {
     queueThumbs.appendChild(wrap);
   });
   const hasItems = capturedQueue.length > 0;
-  // 2026-09-09追加(祥希さんの指摘): 未送信がある間、メニューボタンに⚠️を出す
+  // 2026-09-09追加(祥希さんの指摘): 未送信がある間、メニューボタン・「未送信一覧を見る」に⚠️を出す
   menuBadge.classList.toggle('show', hasItems);
-  // 2026-09-09変更(祥希さんの指定): 「NAVISに送信」ボタンを撮影直後・スマホ内選択直後・
-  // 未送信一覧の3箇所に置いたため、まとめて同じ状態に揃える(分割撮影モード中は隠す。
-  // 自動送信はしない、モード終了で再表示されるだけ)。
+  unsentMenuBadge.classList.toggle('show', hasItems);
+  // 2026-09-09変更(祥希さんの指摘: 「アクションで表示が変わる」設計をやめる): 「NAVISに送信」
+  // ボタン自体は常時表示のままにし、押せるかどうかだけをdisabledで切り替える(display切替は廃止)。
+  // ⚠️バッジのみ未送信がある時だけ表示する。
   sendButtons.forEach(btn => {
-    btn.style.display = (hasItems && !lastShotItemId) ? 'block' : 'none';
     // 2026-08-31修正: sendingを見ずに!hasItemsだけで有効/無効を決めていたため、送信中に
     // renderQueue()が呼ばれる(撮影・削除等)と送信ボタンが再度有効になり、二重送信を招いていた。
-    btn.disabled = !hasItems || sending;
+    // lastShotItemIdがある間(撮影直後の3択が出ている間)も、確定前の写真を誤って送らないよう無効にする。
+    btn.disabled = !hasItems || sending || !!lastShotItemId;
   });
-  btnRetake.style.display = hasItems ? 'block' : 'none';
-}
-
-function retakeLast() {
-  capturedQueue.pop();
-  renderQueue();
-  updateBurstBadge();
+  sendBadges.forEach(badge => badge.classList.toggle('show', hasItems));
 }
 
 function ungroupItems(ids) {
@@ -1420,7 +1432,6 @@ async function sendQueue() {
 
 btnShoot.addEventListener('click', shoot);
 cameraFileInput.addEventListener('change', handleCameraFileCapture); // 2026-08-31追加
-btnRetake.addEventListener('click', retakeLast);
 btnRetakeShot.addEventListener('click', retakeShot); // 2026-09-09追加
 btnNextPage.addEventListener('click', nextPageShot); // 2026-09-09追加
 btnSaveShot.addEventListener('click', saveShot);     // 2026-09-09追加
