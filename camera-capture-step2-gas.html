@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PoNavisShoot カメラ撮影</title>
+<!-- 2026-09-09追加(祥希さんの指示): ファビコン/ホーム画面アイコン。logo.xlsxの「ファビコン」列
+     (P=金・N=赤・S=金の配色、logo.xlsxのPoNavisShoot行の書式をそのまま踏襲)をPillowで
+     PNG画像化してbase64埋め込み(既存ロゴと同じ自己完結方式)。rel="icon"はブラウザタブ用、
+     rel="apple-touch-icon"はスマホのホーム画面に追加した時のアイコン用。 -->
+<link rel="icon" type="image/png" href="data:image/png;base64,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">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+
 <style>
   :root {
     color-scheme: light dark;
@@ -173,6 +180,9 @@
     color: var(--color-accent-blue-text);
     font-weight: 600;
   }
+  /* 2026-09-09追加(祥希さんの指定): 「撮影→NAVISに送信」の組と「スマホ内選択→NAVISに送信」の
+     組を視覚的に分ける、少しの余白。 */
+  .capture-group-gap { margin-top: 22px; }
   #status {
     font-size: 0.85rem;
     white-space: pre-wrap;
@@ -325,24 +335,8 @@
     position: relative;
     z-index: 1;
   }
-  .current-kind-bar {
-    display: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    background: var(--color-accent-blue);
-    border: 1px solid var(--color-accent-blue-border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 12px;
-    font-size: 0.85rem;
-    color: var(--color-accent-blue-text);
-  }
-  .current-kind-bar button {
-    flex: none;
-    padding: 6px 12px;
-    font-size: 0.8rem;
-  }
+  /* 2026-09-09削除: .current-kind-bar(旧「選択中: X > Y」バー)は既に使われておらず
+     (btn-kind-select→今回さらに廃止、の前段階の遺物)、HTML側にも対応要素が無かったため削除。 */
   /* 2026-09-07追加(画面刷新): ロゴの下に常時表示する「戻る/メニュー」行。
      どの画面に居ても同じ位置・見た目のままにすることで、画面遷移時に
      「上のほう」が一切動かないようにする(祥希さんの指定)。 */
@@ -383,15 +377,9 @@
     margin-bottom: 10px;
   }
   .menu-link-btn:active { background: var(--color-accent-blue-active); }
-  /* 2026-09-09追加(祥希さんの指摘: 「選択中: X > Y」という説明文をやめ、証憑選択ボタン自体に
-     現在の選択内容を表示する。メニューボタンと同じ水色にして押せる場所だと分かりやすくする) */
-  .btn-kind-select {
-    width: 100%;
-    background: var(--color-accent-blue);
-    color: var(--color-accent-blue-text);
-    font-weight: 600;
-    margin-bottom: 12px;
-  }
+  /* 2026-09-09(続き)変更(祥希さんの指摘: 「レシート・領収証 > 領収書」というフォルダ階層
+     表示は不要): 上記.btn-kind-select(証憑選択ボタン)自体を廃止したため、このルールも削除。
+     証憑カテゴリの変更は「← 戻る」から選択画面に戻ることで行う。 */
   /* 2026-09-09追加(祥希さんの指摘: 未送信がある時にメニューボタンへ⚠️を表示する) */
   .menu-badge {
     display: none;
@@ -427,10 +415,6 @@
   <h2 class="card-title" id="kindPickerTitle"></h2>
   <div id="kindPickerTiles" class="kind-picker-tiles"></div>
 </div>
-<!-- 2026-09-09変更(祥希さんの指摘: 「選択中: X > Y」という説明文を廃止し、現在の証憑選択
-     状態そのものをボタンのラベルにする。見た目もメニューと同じ水色にして「押せる場所」だと
-     分かりやすくする) -->
-<button id="changeKindBtn" type="button" class="btn-kind-select" style="display:none;"></button>
 
 <div class="card camera-card" id="cameraCard" style="display:none;">
   <!-- 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): getUserMedia+<video>+
@@ -461,15 +445,21 @@
 
   <!-- 2026-09-09変更(祥希さんの指定): 「撮影」ボタン(入口)を1か所にし、旧「長～いレシート」
        の開始/終了トグルは廃止。撮影の都度、下の#captureDecisionRow(撮り直す/次の頁/保存)を
-       表示し、「次の頁」が押された分だけ同じ証憑としてグループ化する。 -->
+       表示し、「次の頁」が押された分だけ同じ証憑としてグループ化する。
+       2026-09-09(続き)変更(祥希さんの指定): 「撮影→NAVISに送信」「スマホ内選択→NAVISに送信」の
+       2組に並べ替え(送信ボタンをそれぞれの直後に置く)。両方の送信ボタンは同じsendQueue()を
+       呼ぶ(キューは共通)。未送信がある間は⚠️を表示し、メニューボタンの警告と揃える。 -->
   <div class="row" id="captureMainRow">
     <button id="btnShoot" class="btn-shoot" disabled>撮影</button>
   </div>
-  <div class="row" id="captureMainRow2">
-    <button id="filePickerToggle" type="button" class="btn-file-picker">スマホ内の写真・PDFを送信</button>
-  </div>
   <div class="row" id="captureMainRow3">
-    <button id="btnSend" style="display:none;">NAVISに送信</button>
+    <button id="btnSend" style="display:none;">NAVISに送信 ⚠️</button>
+  </div>
+  <div class="row capture-group-gap" id="captureMainRow2">
+    <button id="filePickerToggle" type="button" class="btn-file-picker">スマホ内の写真・PDFを選択して送信</button>
+  </div>
+  <div class="row" id="captureMainRow4">
+    <button id="btnSend2" style="display:none;">NAVISに送信 ⚠️</button>
   </div>
 
   <!-- 2026-09-09新設: 撮影直後だけ表示する3択(撮り直す/次の頁/保存)。 -->
@@ -493,6 +483,10 @@
   <div id="queueThumbs" class="thumb-row"></div>
   <div class="row">
     <button id="btnRetake" class="secondary" style="display:none;">直前の1枚を削除</button>
+  </div>
+  <!-- 2026-09-09追加(祥希さんの指摘: この画面に送信ボタンが無く、見るだけの画面になっていた) -->
+  <div class="row">
+    <button id="btnSend3" style="display:none;">NAVISに送信 ⚠️</button>
   </div>
 </div>
 
@@ -536,12 +530,18 @@ const cameraCard = document.getElementById('cameraCard');
 const btnStart = document.getElementById('btnStart');
 const btnShoot = document.getElementById('btnShoot');
 const btnRetake = document.getElementById('btnRetake');
+// 2026-09-09追加(祥希さんの指定): 「NAVISに送信」を撮影直後・スマホ内選択直後・未送信一覧の
+// 3箇所に置く(見た目上は3個のボタンだが、すべて同じsendQueue()を呼ぶ)。
 const btnSend = document.getElementById('btnSend');
+const btnSend2 = document.getElementById('btnSend2');
+const btnSend3 = document.getElementById('btnSend3');
+const sendButtons = [btnSend, btnSend2, btnSend3];
 const burstBadge = document.getElementById('burstBadge');
 // 2026-09-09追加: 撮影直後の3択(撮り直す/次の頁/保存)まわりの要素
 const captureMainRow = document.getElementById('captureMainRow');
 const captureMainRow2 = document.getElementById('captureMainRow2');
 const captureMainRow3 = document.getElementById('captureMainRow3');
+const captureMainRow4 = document.getElementById('captureMainRow4');
 const captureDecisionRow = document.getElementById('captureDecisionRow');
 const btnRetakeShot = document.getElementById('btnRetakeShot');
 const btnNextPage = document.getElementById('btnNextPage');
@@ -566,7 +566,6 @@ const menuOpenUnsentBtn = document.getElementById('menuOpenUnsentBtn');
 const menuOpenSentBtn = document.getElementById('menuOpenSentBtn');
 const unsentListScreen = document.getElementById('unsentListScreen');
 const sentListScreen = document.getElementById('sentListScreen');
-const changeKindBtn = document.getElementById('changeKindBtn');
 
 const MAJOR_CATEGORIES = [
   '01_レシート・領収証', '02_請求書', '03_預金口座',
@@ -712,7 +711,6 @@ async function loadCustomerInfo() {
       // 2026-08-27追加: 証憑種別が1件も設定されていない顧客は、従来通りタイル選択なしの1本道
       if (customerKinds.length === 0) {
         kindPickerCard.style.display = 'none';
-        changeKindBtn.style.display = 'none';
         cameraCard.style.display = '';
         headerBackBtn.style.display = 'none'; // 種別分岐が無い1本道の顧客なので戻る先が無い
         if (!cameraStarted) startCamera(); // 2026-08-27追加: 種別分岐が無い顧客も自動でカメラ起動
@@ -738,7 +736,6 @@ async function loadCustomerInfo() {
 // 表示する方式に統一した。
 function hideAllScreens() {
   kindPickerCard.style.display = 'none';
-  changeKindBtn.style.display = 'none';
   cameraCard.style.display = 'none';
   menuScreen.style.display = 'none';
   unsentListScreen.style.display = 'none';
@@ -879,8 +876,6 @@ function renderKindSubList(major, list) {
 function selectKind(k) {
   selectedKind = k;
   hideAllScreens();
-  changeKindBtn.style.display = '';
-  changeKindBtn.textContent = majorLabel(k.majorCategory) + ' > ' + k.displayName;
   cameraCard.style.display = '';
   headerBackBtn.style.display = '';
   // 2026-09-07変更: 送信済み一覧はメニュー経由の#sentListScreenでのみ表示する。
@@ -901,8 +896,6 @@ function returnToPicker() {
   }
 }
 
-changeKindBtn.addEventListener('click', renderKindHome);
-
 // 2026-09-07追加(画面刷新): 共通ヘッダー直下の「戻る」は画面によって挙動が変わる
 // (メニュー系画面 → 一つ前の画面/メニューへ、撮影画面 → 選択画面へ、サブ一覧 → ホームへ)。
 let screenBeforeMenu = 'home'; // メニューを開く直前に居た画面('home' | 'camera')
@@ -916,7 +909,6 @@ function closeMenu() {
   if (screenBeforeMenu === 'camera') {
     hideAllScreens();
     cameraCard.style.display = '';
-    if (selectedKind) changeKindBtn.style.display = '';
     headerBackBtn.style.display = '';
   } else {
     renderKindHome(); // サブ一覧を見ていた場合も含め、常にホームへ戻す(単純化。hideAllScreens済み)
@@ -971,7 +963,6 @@ async function deletePendingFile(fileId, wrapEl) {
     if (!data.ok) throw new Error(data.error || '不明なエラー');
     wrapEl.remove();
     pendingEmptyEl.style.display = pendingFilesEl.children.length === 0 ? 'block' : 'none';
-    setStatus('削除しました。', 'ok');
   } catch (e) {
     setStatus('削除に失敗しました: ' + e.message, 'error');
   }
@@ -988,7 +979,6 @@ function startCamera() {
   cameraStarted = true;
   btnShoot.disabled = false;
   btnStart.style.display = 'none';
-  setStatus('準備完了。「撮影」を押すとスマホのカメラが起動します。', 'ok');
 }
 
 function stopCamera() {
@@ -1002,7 +992,6 @@ function stopCameraManually() {
   resetCaptureFlow();
   btnShoot.disabled = true;
   btnStart.style.display = 'block';
-  setStatus('前の画面に戻ります。', 'ok');
 }
 
 // 2026-08-31変更(祥希さんの指摘: 手ブレ補正等が無く画質が悪い): <video>のライブ映像フレームを
@@ -1050,13 +1039,13 @@ function saveShot() {
   showCaptureMainRow();
   renderQueue(); // 2026-09-09修正: lastShotItemIdをクリアした後でNAVISに送信ボタンを再評価する
   updateBurstBadge();
-  setStatus(capturedQueue.length + '枚 撮影済み。続けて撮影するか、送信してください。', 'ok');
 }
 
 function showCaptureDecisionRow() {
   captureMainRow.style.display = 'none';
   captureMainRow2.style.display = 'none';
   captureMainRow3.style.display = 'none';
+  captureMainRow4.style.display = 'none';
   captureDecisionRow.style.display = 'flex';
 }
 
@@ -1065,6 +1054,7 @@ function showCaptureMainRow() {
   captureMainRow.style.display = '';
   captureMainRow2.style.display = '';
   captureMainRow3.style.display = '';
+  captureMainRow4.style.display = '';
 }
 
 // 2026-09-09追加: 画面遷移時(ホームに戻る・カメラを離れる等)に撮影直後の3択状態を
@@ -1134,7 +1124,6 @@ filePicker.addEventListener('change', () => {
   });
   filePicker.value = '';
   renderQueue();
-  setStatus(capturedQueue.length + '枚 追加済み。続けて追加するか、送信してください。', 'ok');
 });
 
 function renderQueue() {
@@ -1186,11 +1175,15 @@ function renderQueue() {
   const hasItems = capturedQueue.length > 0;
   // 2026-09-09追加(祥希さんの指摘): 未送信がある間、メニューボタンに⚠️を出す
   menuBadge.classList.toggle('show', hasItems);
-  // 分割撮影モード中は送信ボタンを隠す(自動送信はしない。モード終了で再表示されるだけ)
-  btnSend.style.display = (hasItems && !lastShotItemId) ? 'block' : 'none';
-  // 2026-08-31修正: sendingを見ずに!hasItemsだけで有効/無効を決めていたため、送信中に
-  // renderQueue()が呼ばれる(撮影・削除等)と送信ボタンが再度有効になり、二重送信を招いていた。
-  btnSend.disabled = !hasItems || sending;
+  // 2026-09-09変更(祥希さんの指定): 「NAVISに送信」ボタンを撮影直後・スマホ内選択直後・
+  // 未送信一覧の3箇所に置いたため、まとめて同じ状態に揃える(分割撮影モード中は隠す。
+  // 自動送信はしない、モード終了で再表示されるだけ)。
+  sendButtons.forEach(btn => {
+    btn.style.display = (hasItems && !lastShotItemId) ? 'block' : 'none';
+    // 2026-08-31修正: sendingを見ずに!hasItemsだけで有効/無効を決めていたため、送信中に
+    // renderQueue()が呼ばれる(撮影・削除等)と送信ボタンが再度有効になり、二重送信を招いていた。
+    btn.disabled = !hasItems || sending;
+  });
   btnRetake.style.display = hasItems ? 'block' : 'none';
 }
 
@@ -1297,7 +1290,7 @@ async function sendQueue() {
   // 二重の安全策)。
   if (sending) return;
   sending = true;
-  btnSend.disabled = true;
+  sendButtons.forEach(btn => { btn.disabled = true; });
   // 2026-08-31追加(顧客Iの実機テストで発見: 分割撮影モードの写真が「g1p1ofundefined」等の
   // 壊れたファイル名で送信され、PoNavisLog側のグループ判定が一致せず1証憑としてまとまらず
   // 別々の証憑として処理されてしまった不具合の修正)。原因は、下のgroupTotalsを
@@ -1389,7 +1382,8 @@ async function sendQueue() {
     // 2026-08-31追加: 並列送信では完了順が元の並びと一致しないため、進捗は
     // 「(何番目を処理中)」ではなく「完了した枚数」で表示する。
     completedCount++;
-    setStatus('送信中… (' + completedCount + '/' + total + ')');
+    // 2026-09-09変更(祥希さんの指摘: 欄外のアシストメッセージは基本不要): #status側への
+    // 進捗表示は送信中オーバーレイに隠れて見えないため削除、オーバーレイの表示だけ残す。
     updateSendingOverlay('送信中… (' + completedCount + '/' + total + ')');
   });
 
@@ -1430,7 +1424,8 @@ btnRetake.addEventListener('click', retakeLast);
 btnRetakeShot.addEventListener('click', retakeShot); // 2026-09-09追加
 btnNextPage.addEventListener('click', nextPageShot); // 2026-09-09追加
 btnSaveShot.addEventListener('click', saveShot);     // 2026-09-09追加
-btnSend.addEventListener('click', sendQueue);
+// 2026-09-09追加(祥希さんの指定): 3箇所の「NAVISに送信」ボタンはすべて同じsendQueue()を呼ぶ
+sendButtons.forEach(btn => btn.addEventListener('click', sendQueue));
 
 window.addEventListener('beforeunload', stopCamera);
 </script>
